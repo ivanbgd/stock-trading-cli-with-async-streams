@@ -1,7 +1,7 @@
-use chrono::prelude::*;
 use clap::Parser;
 use std::io::{Error, ErrorKind};
 use stock_trading_cli_with_async_streams::cli::Args;
+use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 use stock_trading_cli_with_async_streams::constants::WINDOW_SIZE;
 
@@ -114,13 +114,13 @@ impl AsyncStockSignal for WindowedSMA {
 ///
 fn fetch_closing_data(
     symbol: &str,
-    beginning: &DateTime<Utc>,
-    end: &DateTime<Utc>,
+    beginning: OffsetDateTime,
+    end: OffsetDateTime,
 ) -> std::io::Result<Vec<f64>> {
     let provider = yahoo::YahooConnector::new();
 
     let response = provider
-        .get_quote_history(symbol, *beginning, *end)
+        .get_quote_history(symbol, beginning, end)
         .map_err(|_| Error::from(ErrorKind::InvalidData))?;
     let mut quotes = response
         .quotes()
@@ -135,8 +135,8 @@ fn fetch_closing_data(
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
-    let from: DateTime<Utc> = args.from.parse().expect("Couldn't parse 'from' date or time");
-    let to = Utc::now();
+    let from: OffsetDateTime = args.from.parse().expect("Couldn't parse 'from' date or time");
+    let to = OffsetDateTime::now_utc();
 
     let min = MinPrice {};
     let max = MaxPrice {};
@@ -146,7 +146,7 @@ fn main() -> std::io::Result<()> {
     // a simple way to output a CSV header
     println!("period start,symbol,price,change %,min,max,30d avg");
     for symbol in args.symbols.split(',') {
-        let closes = fetch_closing_data(&symbol, &from, &to)?;
+        let closes = fetch_closing_data(&symbol, from, to)?;
         if !closes.is_empty() {
             // min/max of the period. unwrap() because those are Option types
             let period_min: f64 = min.calculate(&closes).unwrap();

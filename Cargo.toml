@@ -10,6 +10,6 @@ keywords = ["finance", "fintech", "hft", "stock", "trading"]
 categories = ["finance"]
 
 [dependencies]
-chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5.1", features = ["derive"] }
-yahoo_finance_api = { version = "1.1.5", features = ["blocking"] }
+time = "0.3"
+yahoo_finance_api = { version = "2.1", features = ["blocking"] }
