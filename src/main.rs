@@ -1,8 +1,10 @@
-use clap::Parser;
 use std::io::{Error, ErrorKind};
-use stock_trading_cli_with_async_streams::cli::Args;
-use time::OffsetDateTime;
+
+use clap::Parser;
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use yahoo_finance_api as yahoo;
+
+use stock_trading_cli_with_async_streams::cli::Args;
 use stock_trading_cli_with_async_streams::constants::WINDOW_SIZE;
 
 /// A trait to provide a common interface for all signal calculations
@@ -28,7 +30,11 @@ impl AsyncStockSignal for MinPrice {
         if series.is_empty() {
             None
         } else {
-            Some(series.iter().fold(f64::MAX, |min_elt, curr_elt| min_elt.min(*curr_elt)))
+            Some(
+                series
+                    .iter()
+                    .fold(f64::MAX, |min_elt, curr_elt| min_elt.min(*curr_elt)),
+            )
         }
     }
 }
@@ -44,7 +50,11 @@ impl AsyncStockSignal for MaxPrice {
         if series.is_empty() {
             None
         } else {
-            Some(series.iter().fold(f64::MIN, |max_elt, curr_elt| max_elt.max(*curr_elt)))
+            Some(
+                series
+                    .iter()
+                    .fold(f64::MIN, |max_elt, curr_elt| max_elt.max(*curr_elt)),
+            )
         }
     }
 }
@@ -99,7 +109,7 @@ impl AsyncStockSignal for WindowedSMA {
                 series
                     .windows(self.window_size)
                     .map(|window| window.iter().sum::<f64>() / window.len() as f64)
-                    .collect()
+                    .collect(),
             )
         } else {
             None
@@ -127,7 +137,7 @@ fn fetch_closing_data(
         .map_err(|_| Error::from(ErrorKind::InvalidData))?;
     if !quotes.is_empty() {
         quotes.sort_by_cached_key(|k| k.timestamp);
-        Ok(quotes.iter().map(|q| q.adjclose as f64).collect())
+        Ok(quotes.iter().map(|q| q.adjclose).collect())
     } else {
         Ok(vec![])
     }
@@ -135,16 +145,20 @@ fn fetch_closing_data(
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
-    let from: OffsetDateTime = args.from.parse().expect("Couldn't parse 'from' date or time");
+    let from = OffsetDateTime::parse(&args.from, &Rfc3339)
+        .expect("The provided date or time format isn't correct.");
     let to = OffsetDateTime::now_utc();
 
     let min = MinPrice {};
     let max = MaxPrice {};
     let price_diff = PriceDifference {};
-    let n_window_sma = WindowedSMA { window_size: WINDOW_SIZE };
+    let n_window_sma = WindowedSMA {
+        window_size: WINDOW_SIZE,
+    };
 
-    // a simple way to output a CSV header
+    // A simple way to output a CSV header
     println!("period start,symbol,price,change %,min,max,30d avg");
+
     for symbol in args.symbols.split(',') {
         let closes = fetch_closing_data(&symbol, from, to)?;
         if !closes.is_empty() {
@@ -155,10 +169,10 @@ fn main() -> std::io::Result<()> {
             let (_, pct_change) = price_diff.calculate(&closes).unwrap_or((0.0, 0.0));
             let sma = n_window_sma.calculate(&closes).unwrap_or_default();
 
-            // a simple way to output CSV data
+            // A simple way to output CSV data
             println!(
                 "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                from.to_rfc3339(),
+                OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'."),
                 symbol,
                 last_price,
                 pct_change * 100.0,
@@ -168,6 +182,7 @@ fn main() -> std::io::Result<()> {
             );
         }
     }
+
     Ok(())
 }
 

@@ -11,5 +11,5 @@ categories = ["finance"]
 
 [dependencies]
 clap = { version = "4.5.1", features = ["derive"] }
-time = "0.3"
+time = { version = "0.3", features = ["formatting", "parsing"] }
 yahoo_finance_api = { version = "2.1", features = ["blocking"] }
