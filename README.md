@@ -18,6 +18,12 @@ pricing data and calculate key financial metrics in real time.
 
 ## Notes
 
+- List of S&P 500 symbols (tickers) can be found at:
+    - https://github.com/datasets/s-and-p-500-companies/blob/main/data/constituents.csv
+    - https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
+- The sorted list can be found in [sp500_feb_2024.csv](sp500_feb_2024.csv).
+    - Symbols "BF.B" and "BRK.B" are removed from the list.
+
 ## The Most Notable Crates Used
 
 - [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api), as an adapter for
@@ -42,5 +48,9 @@ period start,symbol,price,change %,min,max,30d avg
 2023-07-03T12:00:09Z,NVDA,$788.17,85.86%,$403.22,$788.17,$655.10
 2023-07-03T12:00:09Z,UBER,$78.20,81.48%,$40.62,$81.39,$69.35
 ```
+
+## Measurements
+
+- Sequential async version took 84 seconds to complete.
 
 ## Potential Improvements and Additions

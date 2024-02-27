@@ -161,6 +161,7 @@ pub async fn main_logic() -> std::io::Result<()> {
     println!("period start,symbol,price,change %,min,max,30d avg");
 
     for symbol in args.symbols.split(',') {
+        let symbol = symbol.trim();
         let closes = fetch_closing_data(&symbol, from, to).await?;
         if !closes.is_empty() {
             // min/max of the period. unwrap() because those are Option types
