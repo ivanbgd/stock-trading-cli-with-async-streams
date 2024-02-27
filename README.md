@@ -26,18 +26,25 @@ pricing data and calculate key financial metrics in real time.
 
 ## Implementation Notes
 
-- We started with a regular ("sequential") async version.
+- We started with synchronous code.
+- Then we moved to a regular (sequential, single-threaded) `async` version.
     - With all S&P 500 symbols it took 84 seconds for it to complete.
-- Then we upgraded the main loop to use explicit concurrency with async-await paradigm.  
+- Then we upgraded the main loop to use explicit concurrency with `async/await` paradigm.  
   It runs multiple instances of the same `Future` concurrently.  
   This uses the waiting time more efficiently.  
   This can increase the program's I/O throughput dramatically, which may be needed to keep the strict schedule with an
-  async stream (that ticks every 10 seconds), without having to manage threads or data structures to retrieve results.  
-  We fetch the S&P 500 data every 10 seconds.
-    - This way it takes the program less than two seconds to fetch all S&P 500 data, instead of 84 seconds as before, on
-      the same computer and at the same time of the day.
+  async stream (that ticks every `n` seconds, where `n = 30` by default), without having to manage threads or data
+  structures to retrieve results.  
+  We fetch the S&P 500 data every `n` seconds.
+    - This way it takes the program less than **two seconds** to fetch all S&P 500 data, instead of 84 seconds as
+      before, on the same computer and at the same time of the day.
     - That's a speed-up of around 50 times on the computer.
-    - This further means that we can fetch data even more frequently than 10 seconds.
+    - This further means that we can fetch data a lot more frequently than the default 30 seconds.
+- We are using `async` streams for improved efficiency (`async` streaming on a schedule).
+- Unit tests are also asynchronous.
+- We are using actors for efficient data processing.
+- The actors are connected to the outside world.
+    - We create a web service for this.
 
 ## Notes on Data
 
