@@ -10,6 +10,7 @@ keywords = ["finance", "fintech", "hft", "stock", "trading"]
 categories = ["finance"]
 
 [dependencies]
+async-std = { version = "1.12", features = ["attributes", "tokio1"] }
 clap = { version = "4.5.1", features = ["derive"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
-yahoo_finance_api = { version = "2.1", features = ["blocking"] }
+yahoo_finance_api = { version = "2.1" }
