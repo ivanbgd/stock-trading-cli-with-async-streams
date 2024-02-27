@@ -1,3 +1,15 @@
+# Importance to project
+
+- Actors are a different way of unifying and linking processing steps. As a programming pattern that is well supported
+  by a framework it greatly facilitates building such pipelines with the ability to run across threads (or even multiple
+  computers), thus providing a great way of scaling out any application.
+- By using a framework that takes care of the messaging, synchronization, and instantiation, you can focus on business
+  logic and data processing steps to wire them up later. This type of encapsulation also leads to code that simply works
+  on the input data structure and can be placed anywhere in the pipeline without much effort. Additionally, actors can
+  handle state so keeping an open file handle or connection to an external service is easily possible as well. Building
+  this code by hand using thread-pools, channels, etc. would require a lot more time and knowledge - similar to using a
+  raw TCP stream vs a web framework.
+
 # Project Conclusions
 
 - Rust is a highly dynamic ecosystem that is quickly evolving to span the gap between systems programming and higher
