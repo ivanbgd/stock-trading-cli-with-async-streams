@@ -9,6 +9,15 @@
   handle state so keeping an open file handle or connection to an external service is easily possible as well. Building
   this code by hand using thread-pools, channels, etc. would require a lot more time and knowledge - similar to using a
   raw TCP stream vs a web framework.
+- Connecting actors internally is fairly trivial. However, in order to access an actor’s state from outside the actor
+  system, a little redesign is necessary - especially when there are multiple actors processing a single message type.
+  As the developer you have to decide what data structure to use (lock-free or locking), which executor to spawn the
+  webserver with, and how to retrieve the data from the collection actor.
+- Whichever approach you pick, it will have a significant impact on performance since locking a thread with a mutex may
+  block multiple actors from executing and could even lead to a deadlock! Solving this case requires a good
+  understanding of the requirements: can the data be a little (i.e. seconds) outdated? Is cloning the data feasible? Is
+  a single actor able to handle the number of incoming messages? For this project, anything workable will do - so
+  use the chance to try out different things and see how it goes.
 
 # Project Conclusions
 

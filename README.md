@@ -18,7 +18,8 @@ pricing data and calculate key financial metrics in real time.
 
 ## Additional Description
 
-- The goal is to fetch all S&P 500 stock data from the [Yahoo! Finance API](https://finance.yahoo.com/).
+- The goal is to fetch all [S&P 500 stock data](https://www.marketwatch.com/investing/index/spx) from
+  the [Yahoo! Finance API](https://finance.yahoo.com/).
 - Data is fetched from the date that a user provides as a CLI argument to the current moment.
 - Users also provide symbols that they want on the command line.
 - Extracted data are minimum, maximum and closing prices for each requested symbol, along with percent change and a
@@ -42,7 +43,7 @@ pricing data and calculate key financial metrics in real time.
     - This further means that we can fetch data a lot more frequently than the default 30 seconds.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
-- We are using actors for efficient data processing.
+- We are using actors ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)) for efficient data processing.
 - The actors are connected to the outside world.
     - We create a web service for this.
 
