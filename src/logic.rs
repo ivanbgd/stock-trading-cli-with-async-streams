@@ -1,124 +1,18 @@
 use std::io::{Error, ErrorKind};
 use std::time::{Duration, Instant};
 
+use actix::Actor;
+use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use yahoo_finance_api as yahoo;
 
+use crate::actors::MultiActor;
 use crate::cli::Args;
 use crate::constants::{TICK_INTERVAL_SECS, WINDOW_SIZE};
-
-/// A trait to provide a common interface for all signal calculations
-trait AsyncStockSignal {
-    /// A signal's data type
-    type SignalType;
-
-    /// Calculate a signal on the provided series
-    ///
-    /// # Returns
-    /// Calculated signal of the provided type, or `None` on error/invalid data
-    async fn calculate(&self, series: &[f64]) -> Option<Self::SignalType>;
-}
-
-/// Find the minimum in a series of `f64`
-struct MinPrice {}
-
-impl AsyncStockSignal for MinPrice {
-    type SignalType = f64;
-
-    /// Returns the minimum in a series of `f64` or `None` if it's empty.
-    async fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
-        if series.is_empty() {
-            None
-        } else {
-            Some(
-                series
-                    .iter()
-                    .fold(f64::MAX, |min_elt, curr_elt| min_elt.min(*curr_elt)),
-            )
-        }
-    }
-}
-
-/// Find the maximum in a series of `f64`
-struct MaxPrice {}
-
-impl AsyncStockSignal for MaxPrice {
-    type SignalType = f64;
-
-    /// Returns the maximum in a series of `f64` or `None` if it's empty.
-    async fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
-        if series.is_empty() {
-            None
-        } else {
-            Some(
-                series
-                    .iter()
-                    .fold(f64::MIN, |max_elt, curr_elt| max_elt.max(*curr_elt)),
-            )
-        }
-    }
-}
-
-/// Calculates the absolute and relative difference between the last and the first element of an f64 series.
-///
-/// The relative difference is calculated as `(last - first) / first`.
-struct PriceDifference {}
-
-impl AsyncStockSignal for PriceDifference {
-    type SignalType = (f64, f64);
-
-    /// Calculates the absolute and relative difference between the last and the first element of an f64 series.
-    ///
-    /// The relative difference is calculated as `(last - first) / first`.
-    ///
-    /// # Returns
-    /// A tuple of `(absolute, relative)` differences, or `None` if the series is empty.
-    async fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
-        if series.is_empty() {
-            None
-        } else {
-            let first = series.first().expect("Expected first.");
-            let last = series.last().unwrap_or(first);
-
-            let abs_diff = last - first;
-
-            let first = if *first == 0.0 { 1.0 } else { *first };
-            let rel_diff = abs_diff / first;
-
-            Some((abs_diff, rel_diff))
-        }
-    }
-}
-
-/// Window function to create a simple moving average
-struct WindowedSMA {
-    window_size: usize,
-}
-
-impl AsyncStockSignal for WindowedSMA {
-    type SignalType = Vec<f64>;
-
-    /// Window function to create a simple moving average
-    ///
-    /// # Returns
-    /// A vector with the series' windowed averages;
-    /// or `None` in case the series is empty or window size <= 1.
-    async fn calculate(&self, series: &[f64]) -> Option<Self::SignalType> {
-        if !series.is_empty() && self.window_size > 1 {
-            Some(
-                series
-                    .windows(self.window_size)
-                    .map(|window| window.iter().sum::<f64>() / window.len() as f64)
-                    .collect(),
-            )
-        } else {
-            None
-        }
-    }
-}
+use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
 ///
 /// Retrieve data from a data source and extract the closing prices
@@ -205,6 +99,8 @@ pub async fn main_loop() -> std::io::Result<()> {
 
     let symbols: Vec<&str> = args.symbols.split(",").collect();
 
+    let my_actor = MultiActor {}.start();
+
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
     // A simple way to output a CSV header
@@ -215,6 +111,8 @@ pub async fn main_loop() -> std::io::Result<()> {
         println!("\n\n*** {} ***\n", OffsetDateTime::now_utc());
 
         let start = Instant::now();
+
+        // let _result = my_actor.send(Msg(symbols.clone())).await;
 
         // Explicit concurrency with async-await paradigm:
         // Run multiple instances of the same Future concurrently.
@@ -227,81 +125,7 @@ pub async fn main_loop() -> std::io::Result<()> {
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
 
+    System::current().stop();
+
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[async_std::test]
-    async fn test_min_price_calculate() {
-        let signal = MinPrice {};
-        assert_eq!(signal.calculate(&[]).await, None);
-        assert_eq!(signal.calculate(&[1.0]).await, Some(1.0));
-        assert_eq!(signal.calculate(&[1.0, 0.0]).await, Some(0.0));
-        assert_eq!(
-            signal
-                .calculate(&[2.0, 3.0, 5.0, 6.0, 1.0, 2.0, 10.0])
-                .await,
-            Some(1.0)
-        );
-        assert_eq!(
-            signal.calculate(&[0.0, 3.0, 5.0, 6.0, 1.0, 2.0, 1.0]).await,
-            Some(0.0)
-        );
-    }
-
-    #[async_std::test]
-    async fn test_max_price_calculate() {
-        let signal = MaxPrice {};
-        assert_eq!(signal.calculate(&[]).await, None);
-        assert_eq!(signal.calculate(&[1.0]).await, Some(1.0));
-        assert_eq!(signal.calculate(&[1.0, 0.0]).await, Some(1.0));
-        assert_eq!(
-            signal
-                .calculate(&[2.0, 3.0, 5.0, 6.0, 1.0, 2.0, 10.0])
-                .await,
-            Some(10.0)
-        );
-        assert_eq!(
-            signal.calculate(&[0.0, 3.0, 5.0, 6.0, 1.0, 2.0, 1.0]).await,
-            Some(6.0)
-        );
-    }
-
-    #[async_std::test]
-    async fn test_price_difference_calculate() {
-        let signal = PriceDifference {};
-        assert_eq!(signal.calculate(&[]).await, None);
-        assert_eq!(signal.calculate(&[1.0]).await, Some((0.0, 0.0)));
-        assert_eq!(signal.calculate(&[1.0, 0.0]).await, Some((-1.0, -1.0)));
-        assert_eq!(
-            signal
-                .calculate(&[2.0, 3.0, 5.0, 6.0, 1.0, 2.0, 10.0])
-                .await,
-            Some((8.0, 4.0))
-        );
-        assert_eq!(
-            signal.calculate(&[0.0, 3.0, 5.0, 6.0, 1.0, 2.0, 1.0]).await,
-            Some((1.0, 1.0))
-        );
-    }
-
-    #[async_std::test]
-    async fn test_windowed_sma_calculate() {
-        let series = vec![2.0, 4.5, 5.3, 6.5, 4.7];
-
-        let signal = WindowedSMA { window_size: 3 };
-        assert_eq!(
-            signal.calculate(&series).await,
-            Some(vec![3.9333333333333336, 5.433333333333334, 5.5])
-        );
-
-        let signal = WindowedSMA { window_size: 5 };
-        assert_eq!(signal.calculate(&series).await, Some(vec![4.6]));
-
-        let signal = WindowedSMA { window_size: 10 };
-        assert_eq!(signal.calculate(&series).await, Some(vec![]));
-    }
 }
