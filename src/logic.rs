@@ -47,7 +47,7 @@ pub async fn main_loop() -> std::io::Result<()> {
         let start = Instant::now();
 
         for symbol in symbols.clone() {
-            let _result = actor_address.send(QuoteRequest { symbol, from, to }).await;
+            actor_address.do_send(QuoteRequest { symbol, from, to });
         }
 
         // // Explicit concurrency with async-await paradigm:
