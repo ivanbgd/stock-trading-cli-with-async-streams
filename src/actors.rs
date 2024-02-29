@@ -8,6 +8,7 @@ use yahoo_finance_api as yahoo;
 use crate::constants::WINDOW_SIZE;
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
+/// A single actor that downloads data, processes them and prints the results to console
 pub struct MultiActor;
 
 impl Actor for MultiActor {
@@ -16,24 +17,22 @@ impl Actor for MultiActor {
 
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct Msg {
-    pub symbols: Vec<String>,
+pub struct QuoteRequest {
+    pub symbol: String,
     pub from: OffsetDateTime,
     pub to: OffsetDateTime,
 }
 
-impl Handler<Msg> for MultiActor {
+impl Handler<QuoteRequest> for MultiActor {
     type Result = ();
 
-    fn handle(&mut self, msg: Msg, ctx: &mut Self::Context) -> Self::Result {
-        let symbols = msg.symbols;
+    fn handle(&mut self, msg: QuoteRequest, ctx: &mut Self::Context) -> Self::Result {
+        let symbol = msg.symbol;
         let from = msg.from;
         let to = msg.to;
 
         async move {
-            for symbol in symbols {
-                handle_symbol_data(&symbol, from, to).await;
-            }
+            handle_symbol_data(&symbol, from, to).await;
         }
         .into_actor(self)
         .spawn(ctx);

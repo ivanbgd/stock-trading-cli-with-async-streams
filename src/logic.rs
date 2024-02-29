@@ -7,7 +7,7 @@ use async_std::stream;
 use clap::Parser;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{Msg, MultiActor};
+use crate::actors::{MultiActor, QuoteRequest};
 use crate::cli::Args;
 use crate::constants::{CSV_HEADER, TICK_INTERVAL_SECS};
 
@@ -27,7 +27,6 @@ pub async fn main_loop() -> std::io::Result<()> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
-    let to = OffsetDateTime::now_utc();
 
     let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
 
@@ -35,22 +34,21 @@ pub async fn main_loop() -> std::io::Result<()> {
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // A simple way to output a CSV header
-    println!("{}", CSV_HEADER);
-
     while let Some(_) = interval.next().await {
+        // We always want a fresh period end time.
+        let to = OffsetDateTime::now_utc();
+
         // For standard output only, i.e., not for CSV
         println!("\n\n*** {} ***\n", OffsetDateTime::now_utc());
 
+        // A simple way to output a CSV header
+        println!("{}", CSV_HEADER);
+
         let start = Instant::now();
 
-        let result = actor_address
-            .send(Msg {
-                symbols: symbols.clone(),
-                from,
-                to,
-            })
-            .await;
+        for symbol in symbols.clone() {
+            let _result = actor_address.send(QuoteRequest { symbol, from, to }).await;
+        }
 
         // // Explicit concurrency with async-await paradigm:
         // // Run multiple instances of the same Future concurrently.
