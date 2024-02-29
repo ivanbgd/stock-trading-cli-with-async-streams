@@ -50,6 +50,7 @@ pub async fn main_loop() -> std::io::Result<()> {
             let _result = actor_address.send(QuoteRequest { symbol, from, to }).await;
         }
 
+        // // THE FASTEST SOLUTION
         // // Explicit concurrency with async-await paradigm:
         // // Run multiple instances of the same Future concurrently.
         // let queries: Vec<_> = symbols

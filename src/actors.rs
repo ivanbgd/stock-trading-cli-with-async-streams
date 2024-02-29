@@ -48,8 +48,6 @@ async fn fetch_closing_data(
     end: OffsetDateTime,
     provider: yahoo::YahooConnector,
 ) -> std::io::Result<Vec<f64>> {
-    // let provider = yahoo::YahooConnector::new();
-
     let response = provider
         .get_quote_history(symbol, beginning, end)
         .await

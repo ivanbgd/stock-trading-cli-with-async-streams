@@ -20,14 +20,36 @@ pricing data and calculate key financial metrics in real time.
 
 - The goal is to fetch all [S&P 500 stock data](https://www.marketwatch.com/investing/index/spx) from
   the [Yahoo! Finance API](https://finance.yahoo.com/).
+    - We are using the [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api) crate for this purpose, and it
+      allows for asynchronous way of work.
 - Data is fetched from the date that a user provides as a CLI argument to the current moment.
 - Users also provide symbols that they want on the command line.
 - Extracted data are minimum, maximum and closing prices for each requested symbol, along with percent change and a
   simple moving average as a window function (over the 30-day period).
+- The goal is to experiment with:
+    - synchronous (blocking) code,
+    - with single-threaded asynchronous code,
+    - with multithreaded asynchronous code (which proved to be the fastest solution for this concrete problem),
+    - with different implementations of actors ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)):
+        - with [actix](https://crates.io/crates/actix), as an Actor framework for Rust,
+        - with [xactor](https://crates.io/crates/xactor), as another Actor framework for Rust,
+        - perhaps with own implementation of Actors,
+        - with a single actor that is responsible for downloading, processing, and printing of the processed data to
+          console,
+        - with three actors that are responsible for the three mentioned tasks,
+        - with `async/await` combined with `Actors`,
+        - with single-threaded implementation,
+        - with multithreaded implementation,
+        - with various combinations of the above.
+- Some of that was suggested by the project author, and some of it was added on own initiative.
+    - Not everything is contained in the final commit.
+    - Commit history contains different implementations.
+- The goal was also to create a web service for serving the requests for fetching of the data.
+    - We can send the requests manually from the command line. We are not implementing a web client.
 
 ## Implementation Notes
 
-- We started with synchronous code.
+- We started with synchronous code. It was slow.
 - Then we moved to a regular (sequential, single-threaded) `async` version.
     - With all S&P 500 symbols it took 84 seconds for it to complete.
 - Then we upgraded the main loop to use explicit concurrency with `async/await` paradigm.  
@@ -41,9 +63,12 @@ pricing data and calculate key financial metrics in real time.
       before, on the same computer and at the same time of the day.
     - That's a speed-up of around 50 times on the computer.
     - This further means that we can fetch data a lot more frequently than the default 30 seconds.
+    - This proved to be the fastest solution for this concrete problem.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
-- We are using actors ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)) for efficient data processing.
+- We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
+    - This didn't prove to be a fast solution for this concrete problem. It was rather slow, in all variants.
+    - It was on the order of synchronous and single-threaded `async` code, i.e., ~80-90 seconds.
 - The actors are connected to the outside world.
     - We create a web service for this.
 
@@ -103,3 +128,5 @@ Took 278.264ms to complete.
     - [actix](https://crates.io/crates/actix) doesn't support this feature at the time of this writing, unfortunately.
     - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
       been updated in about three years. Also, `actix` is far more popular.
+        - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
+          [this commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/commit/d4f53a7499ef9ceee988a6e3d5d26d518e25f6eb).
