@@ -46,8 +46,9 @@ async fn fetch_closing_data(
     symbol: &str,
     beginning: OffsetDateTime,
     end: OffsetDateTime,
+    provider: yahoo::YahooConnector,
 ) -> std::io::Result<Vec<f64>> {
-    let provider = yahoo::YahooConnector::new();
+    // let provider = yahoo::YahooConnector::new();
 
     let response = provider
         .get_quote_history(symbol, beginning, end)
@@ -70,7 +71,11 @@ async fn handle_symbol_data(
     beginning: OffsetDateTime,
     end: OffsetDateTime,
 ) -> Option<Vec<f64>> {
-    let closes = fetch_closing_data(symbol, beginning, end).await.ok()?;
+    let provider = yahoo::YahooConnector::new();
+
+    let closes = fetch_closing_data(symbol, beginning, end, provider)
+        .await
+        .ok()?;
 
     if !closes.is_empty() {
         let min = MinPrice {};
@@ -100,4 +105,24 @@ async fn handle_symbol_data(
     }
 
     Some(closes)
+}
+
+#[cfg(test)]
+mod tests {
+    use time::format_description::well_known::Rfc3339;
+    use time::OffsetDateTime;
+
+    use super::fetch_closing_data;
+
+    #[async_std::test]
+    async fn aapl_closing_data() {
+        let symbol = "AAPL";
+        let from = OffsetDateTime::parse("2024-01-01T12:00:00+00:00", &Rfc3339).unwrap();
+        let to = OffsetDateTime::parse("2024-02-29T15:51:29+00:00", &Rfc3339).unwrap();
+        let provider = yahoo_finance_api::YahooConnector::new();
+        let closes = fetch_closing_data(symbol, from, to, provider)
+            .await
+            .unwrap();
+        assert_eq!((closes.first().unwrap() * 100.0).round() / 100.0, 185.40);
+    }
 }
