@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 
-use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, WrapFuture};
+use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, ResponseFuture, WrapFuture};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -16,7 +16,7 @@ impl Actor for MultiActor {
 }
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), ()>")]
 pub struct QuoteRequest {
     pub symbol: String,
     pub from: OffsetDateTime,
@@ -24,18 +24,17 @@ pub struct QuoteRequest {
 }
 
 impl Handler<QuoteRequest> for MultiActor {
-    type Result = ();
+    type Result = ResponseFuture<Result<(), ()>>;
 
     fn handle(&mut self, msg: QuoteRequest, ctx: &mut Self::Context) -> Self::Result {
         let symbol = msg.symbol;
         let from = msg.from;
         let to = msg.to;
 
-        async move {
+        Box::pin(async move {
             handle_symbol_data(&symbol, from, to).await;
-        }
-        .into_actor(self)
-        .spawn(ctx);
+            Ok(())
+        })
     }
 }
 
