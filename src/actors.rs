@@ -114,6 +114,11 @@ mod tests {
 
     use super::fetch_closing_data;
 
+    /// Devised so we can test whether working with a single `provider: yahoo::YahooConnector` is correct.
+    ///
+    /// We first worked with a new provider for every single symbol handling.
+    ///
+    /// This test function is not mocked, so it requires Internet connection and Yahoo! Finance API to be available.
     #[async_std::test]
     async fn aapl_closing_data() {
         let symbol = "AAPL";
