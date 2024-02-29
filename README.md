@@ -59,10 +59,13 @@ pricing data and calculate key financial metrics in real time.
 
 ## The Most Notable Crates Used
 
+- [actix](https://crates.io/crates/actix), as Actor framework for Rust
+- [actix-rt](https://crates.io/crates/actix-rt), as Tokio-based single-threaded async runtime for the Actix ecosystem
 - [async-std](https://async.rs/), as an async library
 - [clap](https://crates.io/crates/clap), for CLI arguments parsing
 - [futures](https://crates.io/crates/futures), for an implementation of futures
 - [time](https://crates.io/crates/time), as a date and time library (used by `yahoo_finance_api`)
+- [Tokio](https://tokio.rs/), as an asynchronous runtime - not used directly, but as a dependency of some crates
 - [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api), as an adapter for
   the [Yahoo! Finance API](https://finance.yahoo.com/) to fetch histories of market data quotes
 
@@ -96,3 +99,7 @@ Took 278.264ms to complete.
 
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
+- Find ways to publish and subscribe to messages without explicit calls.
+    - [actix](https://crates.io/crates/actix) doesn't support this feature at the time of this writing, unfortunately.
+    - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
+      been updated in about three years. Also, `actix` is far more popular.
