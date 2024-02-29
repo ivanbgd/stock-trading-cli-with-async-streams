@@ -30,6 +30,12 @@ pub async fn main_loop() -> std::io::Result<()> {
 
     let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
 
+    // let sys = System::new();
+    // sys.block_on(async {
+    //     let actor_address = MultiActor.start();
+    // });
+    // sys.run()?;
+
     let actor_address = MultiActor.start();
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
