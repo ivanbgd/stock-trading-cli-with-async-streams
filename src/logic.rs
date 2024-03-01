@@ -52,27 +52,23 @@ pub async fn main_loop() -> std::io::Result<()> {
         //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         // }
 
-        // THE FASTEST SOLUTION - around 2.5 s
+        // THE FASTEST SOLUTION - around 2.4 s
         // Explicit concurrency with async/await paradigm:
         // Run multiple instances of the same Future concurrently.
         // This variant works with chunks of symbols instead of all symbols.
-        // This implementation still calls `handle_symbol_data()` that processes one symbol at a time,
-        // so no speed improvement is to be expected.
-        let mut all_queries: Vec<_> = vec![];
-        for chunk in chunks_of_symbols.clone() {
-            let queries: Vec<_> = chunk
-                .iter()
-                .map(|symbol| handle_symbol_data(*symbol, from, to))
-                .collect();
-            all_queries.push(queries);
-
-            // let chunk = chunk.to_vec();
-            // let queries: Vec<_> = handle_symbol_data(chunk, from, to).await.collect();
-
-            // let _ = futures::future::join_all(queries).await;
-        }
-        let all_queries: Vec<_> = all_queries.into_iter().flatten().collect();
-        let _ = futures::future::join_all(all_queries).await;
+        // This implementation calls `handle_symbol_data()` that processes multiple symbol at a time,
+        // but we don't see a speed improvement nevertheless.
+        // Perhaps we are just limited by the data-fetching time from the Yahoo! Finance API.
+        // We need to fetch data for around 500 symbols and the function `get_quote_history`
+        // fetches data for one symbol (called "ticker") at a time. It is asynchronous,
+        // but perhaps this is the best that we can do.
+        // The time of 2.4 seconds is obtained with chunk size equal 1.
+        // With chunk size equal 128, the time rises to over 13 seconds.
+        let queries: Vec<_> = chunks_of_symbols
+            .clone()
+            .map(|chunk| handle_symbol_data(chunk, from, to))
+            .collect();
+        let _ = futures::future::join_all(queries).await; // Vec<()>
 
         // // THE FASTEST SOLUTION - around 2.5 s
         // // Explicit concurrency with async/await paradigm:
@@ -81,7 +77,7 @@ pub async fn main_loop() -> std::io::Result<()> {
         //     .iter()
         //     .map(|symbol| handle_symbol_data(*symbol, from, to))
         //     .collect();
-        // let _ = futures::future::join_all(queries).await; // Vec<Option<Vec<f64>>>, or Vec<()>
+        // let _ = futures::future::join_all(queries).await; // Vec<Option<Vec<f64>>> (originally), or Vec<()> (now)
 
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
