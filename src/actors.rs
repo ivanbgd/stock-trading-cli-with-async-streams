@@ -18,7 +18,7 @@ impl Actor for MultiActor {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct QuoteRequest {
-    pub symbol: String,
+    pub chunk: Vec<String>,
     pub from: OffsetDateTime,
     pub to: OffsetDateTime,
 }
@@ -27,12 +27,14 @@ impl Handler<QuoteRequest> for MultiActor {
     type Result = ();
 
     fn handle(&mut self, msg: QuoteRequest, ctx: &mut Self::Context) -> Self::Result {
-        let symbol = msg.symbol;
+        let symbols = msg.chunk;
         let from = msg.from;
         let to = msg.to;
 
         async move {
-            handle_symbol_data(&symbol, from, to).await;
+            for symbol in symbols {
+                handle_symbol_data(&symbol, from, to).await;
+            }
         }
         .into_actor(self)
         .spawn(ctx);

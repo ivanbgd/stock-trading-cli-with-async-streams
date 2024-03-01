@@ -9,7 +9,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::actors::{MultiActor, QuoteRequest};
 use crate::cli::Args;
-use crate::constants::{CSV_HEADER, TICK_INTERVAL_SECS};
+use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 
 /// **The main loop**
 ///
@@ -29,6 +29,7 @@ pub async fn main_loop() -> std::io::Result<()> {
         .expect("The provided date or time format isn't correct.");
 
     let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
     let actor_address = MultiActor.start();
 
@@ -39,16 +40,21 @@ pub async fn main_loop() -> std::io::Result<()> {
         let to = OffsetDateTime::now_utc();
 
         // For standard output only, i.e., not for CSV
-        println!("\n\n*** {} ***\n", OffsetDateTime::now_utc());
+        println!("\n\n*** {} ***\n", to);
 
         // A simple way to output a CSV header
         println!("{}", CSV_HEADER);
 
         let start = Instant::now();
 
-        for symbol in symbols.clone() {
-            let _result = actor_address.send(QuoteRequest { symbol, from, to }).await;
+        for chunk in chunks_of_symbols.clone() {
+            let chunk = chunk.to_vec();
+            let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         }
+
+        // for symbol in symbols.clone() {
+        //     let _result = actor_address.send(QuoteRequest { symbol, from, to }).await;
+        // }
 
         // // THE FASTEST SOLUTION
         // // Explicit concurrency with async-await paradigm:

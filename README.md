@@ -68,7 +68,14 @@ pricing data and calculate key financial metrics in real time.
 - Unit tests are also asynchronous.
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
     - This didn't prove to be a fast solution for this concrete problem. It was rather slow, in all variants.
-    - It was on the order of synchronous and single-threaded `async` code, i.e., ~80-90 seconds.
+    - It was on the order of synchronous and single-threaded `async` code, i.e., ~80-90 seconds, when actors were
+      processing one symbol at a time (when a request message contained only one symbol to process). This applies in
+      case of the `actix` crate with a single `MultiActor` that does all three operations, and in case of three actors
+      when using the `xactor` crate.
+    - When we increased the chunk size to 128, the `MultiActor` performance with `actix` improved a lot, enough for it
+      to fit in the 30-second window.
+    - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the
+      Actix ecosystem".
 - The actors are connected to the outside world.
     - We create a web service for this.
 
@@ -130,3 +137,4 @@ Took 278.264ms to complete.
       been updated in about three years. Also, `actix` is far more popular.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
           [this commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/commit/d4f53a7499ef9ceee988a6e3d5d26d518e25f6eb).
+- Find a way to measure time correctly when working with actors.
