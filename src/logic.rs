@@ -1,13 +1,12 @@
 use std::time::{Duration, Instant};
 
-use actix::Actor;
 use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{MultiActor, QuoteRequest};
+use crate::actors::handle_symbol_data;
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 
@@ -28,10 +27,11 @@ pub async fn main_loop() -> std::io::Result<()> {
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
 
-    let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    let symbols: Vec<&str> = args.symbols.split(",").collect();
     let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
-    let actor_address = MultiActor.start();
+    // let actor_address = MultiActor.start();
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
@@ -47,23 +47,41 @@ pub async fn main_loop() -> std::io::Result<()> {
 
         let start = Instant::now();
 
-        for chunk in chunks_of_symbols.clone() {
-            let chunk = chunk.to_vec();
-            let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
-        }
-
-        // for symbol in symbols.clone() {
-        //     let _result = actor_address.send(QuoteRequest { symbol, from, to }).await;
+        // for chunk in chunks_of_symbols.clone() {
+        //     let chunk = chunk.to_vec();
+        //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         // }
 
-        // // THE FASTEST SOLUTION
-        // // Explicit concurrency with async-await paradigm:
+        // THE FASTEST SOLUTION - around 2.5 s
+        // Explicit concurrency with async/await paradigm:
+        // Run multiple instances of the same Future concurrently.
+        // This variant works with chunks of symbols instead of all symbols.
+        // This implementation still calls `handle_symbol_data()` that processes one symbol at a time,
+        // so no speed improvement is to be expected.
+        let mut all_queries: Vec<_> = vec![];
+        for chunk in chunks_of_symbols.clone() {
+            let queries: Vec<_> = chunk
+                .iter()
+                .map(|symbol| handle_symbol_data(*symbol, from, to))
+                .collect();
+            all_queries.push(queries);
+
+            // let chunk = chunk.to_vec();
+            // let queries: Vec<_> = handle_symbol_data(chunk, from, to).await.collect();
+
+            // let _ = futures::future::join_all(queries).await;
+        }
+        let all_queries: Vec<_> = all_queries.into_iter().flatten().collect();
+        let _ = futures::future::join_all(all_queries).await;
+
+        // // THE FASTEST SOLUTION - around 2.5 s
+        // // Explicit concurrency with async/await paradigm:
         // // Run multiple instances of the same Future concurrently.
         // let queries: Vec<_> = symbols
         //     .iter()
-        //     .map(|symbol| handle_symbol_data(symbol, from, to))
+        //     .map(|symbol| handle_symbol_data(*symbol, from, to))
         //     .collect();
-        // let _ = futures::future::join_all(queries).await;
+        // let _ = futures::future::join_all(queries).await; // Vec<Option<Vec<f64>>>, or Vec<()>
 
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }

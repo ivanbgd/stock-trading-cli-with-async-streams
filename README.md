@@ -56,6 +56,7 @@ pricing data and calculate key financial metrics in real time.
     - With all S&P 500 symbols it took 84 seconds for it to complete.
 - Then we upgraded the main loop to use explicit concurrency with `async/await` paradigm.  
   It runs multiple instances of the same `Future` concurrently.  
+  We are using the [futures](https://crates.io/crates/futures) crate to help us do this.  
   This uses the waiting time more efficiently.  
   This can increase the program's I/O throughput dramatically, which may be needed to keep the strict schedule with an
   async stream (that ticks every `n` seconds, where `n = 30` by default), without having to manage threads or data
@@ -66,6 +67,9 @@ pricing data and calculate key financial metrics in real time.
     - That's a speed-up of around 50 times on the computer.
     - This further means that we can fetch data a lot more frequently than the default 30 seconds.
     - This proved to be the fastest solution for this concrete problem.
+- Using the same explicit concurrency with `async/await` paradigm but with configurable chunk size gives more or less
+  the same execution time.
+    - Namely, whether chunk size of symbols is equal 1 or 128, all symbols are processed in around 2.5 seconds.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
@@ -111,7 +115,8 @@ The `git` commit history contains descriptive comments.
 - [actix-rt](https://crates.io/crates/actix-rt), as Tokio-based single-threaded async runtime for the Actix ecosystem
 - [async-std](https://async.rs/), as an async library
 - [clap](https://crates.io/crates/clap), for CLI arguments parsing
-- [futures](https://crates.io/crates/futures), for an implementation of futures
+- [futures](https://crates.io/crates/futures), for an implementation of futures (required for explicit concurrency
+  with `async/await` paradigm)
 - [time](https://crates.io/crates/time), as a date and time library (used by `yahoo_finance_api`)
 - [Tokio](https://tokio.rs/), as an asynchronous runtime - not used directly, but as a dependency of some crates
 - [xactor](https://crates.io/crates/xactor), as a Rust Actors framework based on async-std
@@ -154,5 +159,5 @@ Took 278.264ms to complete.
       been updated in about three years. Also, `actix` is far more popular.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
           [this commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/commit/d4f53a7499ef9ceee988a6e3d5d26d518e25f6eb).
-- Find a way to measure time correctly when working with actors.
+- Find a way to measure time correctly when working with async/await and/or with Actors.
 - Add tracing or at least logging.

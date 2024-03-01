@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 
-use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, WrapFuture};
+// use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, WrapFuture};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -8,38 +8,38 @@ use yahoo_finance_api as yahoo;
 use crate::constants::WINDOW_SIZE;
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
-/// A single actor that downloads data, processes them and prints the results to console
-pub struct MultiActor;
-
-impl Actor for MultiActor {
-    type Context = Context<Self>;
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct QuoteRequest {
-    pub chunk: Vec<String>,
-    pub from: OffsetDateTime,
-    pub to: OffsetDateTime,
-}
-
-impl Handler<QuoteRequest> for MultiActor {
-    type Result = ();
-
-    fn handle(&mut self, msg: QuoteRequest, ctx: &mut Self::Context) -> Self::Result {
-        let symbols = msg.chunk;
-        let from = msg.from;
-        let to = msg.to;
-
-        async move {
-            for symbol in symbols {
-                handle_symbol_data(&symbol, from, to).await;
-            }
-        }
-        .into_actor(self)
-        .spawn(ctx);
-    }
-}
+// /// A single actor that downloads data, processes them and prints the results to console
+// pub struct MultiActor;
+//
+// impl Actor for MultiActor {
+//     type Context = Context<Self>;
+// }
+//
+// #[derive(Message)]
+// #[rtype(result = "()")]
+// pub struct QuoteRequest {
+//     pub chunk: Vec<String>,
+//     pub from: OffsetDateTime,
+//     pub to: OffsetDateTime,
+// }
+//
+// impl Handler<QuoteRequest> for MultiActor {
+//     type Result = ();
+//
+//     fn handle(&mut self, msg: QuoteRequest, ctx: &mut Self::Context) -> Self::Result {
+//         let symbols = msg.chunk;
+//         let from = msg.from;
+//         let to = msg.to;
+//
+//         async move {
+//             for symbol in symbols {
+//                 handle_symbol_data(&symbol, from, to).await;
+//             }
+//         }
+//         .into_actor(self)
+//         .spawn(ctx);
+//     }
+// }
 
 /// Retrieve data from a data source and extract the closing prices
 ///
@@ -48,7 +48,7 @@ async fn fetch_closing_data(
     symbol: &str,
     beginning: OffsetDateTime,
     end: OffsetDateTime,
-    provider: yahoo::YahooConnector,
+    provider: &yahoo::YahooConnector,
 ) -> std::io::Result<Vec<f64>> {
     let response = provider
         .get_quote_history(symbol, beginning, end)
@@ -66,16 +66,12 @@ async fn fetch_closing_data(
 }
 
 /// Convenience function that chains together the entire processing chain
-async fn handle_symbol_data(
-    symbol: &str,
-    beginning: OffsetDateTime,
-    end: OffsetDateTime,
-) -> Option<Vec<f64>> {
+pub async fn handle_symbol_data(symbol: &str, beginning: OffsetDateTime, end: OffsetDateTime) {
     let provider = yahoo::YahooConnector::new();
 
-    let closes = fetch_closing_data(symbol, beginning, end, provider)
+    let closes = fetch_closing_data(symbol, beginning, end, &provider)
         .await
-        .ok()?;
+        .unwrap_or_default(); // todo: add proper error handling
 
     if !closes.is_empty() {
         let min = MinPrice {};
@@ -85,11 +81,11 @@ async fn handle_symbol_data(
             window_size: WINDOW_SIZE,
         };
 
-        let period_min: f64 = min.calculate(&closes).await?;
-        let period_max: f64 = max.calculate(&closes).await?;
-        let last_price = *closes.last()?;
-        let (_, pct_change) = price_diff.calculate(&closes).await?;
-        let sma = n_window_sma.calculate(&closes).await?;
+        let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
+        let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
+        let last_price = *closes.last().expect("Expected non-empty closes.");
+        let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
+        let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
 
         // A simple way to output CSV data
         println!(
@@ -103,9 +99,50 @@ async fn handle_symbol_data(
             sma.last().unwrap_or(&0.0)
         );
     }
-
-    Some(closes)
 }
+
+// /// Convenience function that chains together the entire processing chain
+// pub async fn handle_symbol_data(
+//     symbols: &[&str],
+//     // symbols: Vec<&str>,
+//     beginning: OffsetDateTime,
+//     end: OffsetDateTime,
+// ) {
+//     let provider = yahoo::YahooConnector::new();
+//
+//     for symbol in symbols {
+//         let closes = fetch_closing_data(symbol, beginning, end, &provider)
+//             .await
+//             .ok()?;
+//
+//         if !closes.is_empty() {
+//             let min = MinPrice {};
+//             let max = MaxPrice {};
+//             let price_diff = PriceDifference {};
+//             let n_window_sma = WindowedSMA {
+//                 window_size: WINDOW_SIZE,
+//             };
+//
+//             let period_min: f64 = min.calculate(&closes).await?;
+//             let period_max: f64 = max.calculate(&closes).await?;
+//             let last_price = *closes.last()?;
+//             let (_, pct_change) = price_diff.calculate(&closes).await?;
+//             let sma = n_window_sma.calculate(&closes).await?;
+//
+//             // A simple way to output CSV data
+//             println!(
+//                 "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+//                 OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'."),
+//                 symbol,
+//                 last_price,
+//                 pct_change * 100.0,
+//                 period_min,
+//                 period_max,
+//                 sma.last().unwrap_or(&0.0)
+//             );
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

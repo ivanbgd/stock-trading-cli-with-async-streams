@@ -1,6 +1,6 @@
 pub const TICK_INTERVAL_SECS: u64 = 5;
 
-pub const CHUNK_SIZE: usize = 1;
+pub const CHUNK_SIZE: usize = 128;
 
 pub const WINDOW_SIZE: usize = 30;
 
