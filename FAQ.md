@@ -33,8 +33,8 @@ supported ([see Rust Blog](https://blog.rust-lang.org/2023/12/21/async-fn-rpit-i
 
 ## I’m used to seeing `async` calls on blocking operations as network or database queries, not regular processing. Does Rust `async` code make better usage of multi-core processors?
 
-CPU-bound applications typically don’t benefit from `async`, although the runtime is multithreaded across different
-cores.  
+CPU-bound applications typically don’t benefit from `async`, although the runtime could be multithreaded across
+different cores.  
 [crossbeam](https://crates.io/crates/crossbeam) or other crates help with effective parallel processing.  
 Tasks that benefit from `async` are usually I/O bound and require lots of waiting, such as network or disk I/O.  
 In the case of this project (series) the calculations are light and using `async` to schedule them on a loop can

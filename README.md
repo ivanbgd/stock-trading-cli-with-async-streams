@@ -24,8 +24,10 @@ pricing data and calculate key financial metrics in real time.
       allows for asynchronous way of work.
 - Data is fetched from the date that a user provides as a CLI argument to the current moment.
 - Users also provide symbols that they want on the command line.
-- Extracted data are minimum, maximum and closing prices for each requested symbol, along with percent change and a
-  simple moving average as a window function (over the 30-day period).
+- The fetched data include OLHC data (open, low, high, close prices), timestamp and volume, for each symbol.
+- The data that we extract from the received data are minimum, maximum and closing prices for each requested symbol,
+  along with percent change and a simple moving average as a window function (over the 30-day period).
+- As can be seen, the calculations performed are not super-intensive.
 - The goal is to experiment with:
     - synchronous (blocking) code,
     - with single-threaded asynchronous code,
@@ -67,17 +69,28 @@ pricing data and calculate key financial metrics in real time.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
-    - This didn't prove to be a fast solution for this concrete problem. It was rather slow, in all variants.
+    - This didn't prove to be a fast solution for this concrete problem.
     - It was on the order of synchronous and single-threaded `async` code, i.e., ~80-90 seconds, when actors were
       processing one symbol at a time (when a request message contained only one symbol to process). This applies in
       case of the `actix` crate with a single `MultiActor` that does all three operations, and in case of three actors
       when using the `xactor` crate.
     - When we increased the chunk size to 128, the `MultiActor` performance with `actix` improved a lot, enough for it
       to fit in the 30-second window.
+    - Interestingly, reducing the chunk size back to 1 now, in this implementation, was able to put the complete
+      execution in a 5-second slot.
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the
       Actix ecosystem".
 - The actors are connected to the outside world.
     - We create a web service for this.
+
+## Additional Explanation
+
+Check out the files that are provided for additional explanation:
+
+- [FAQ](FAQ.md)
+- [Summary](Summary.md)
+
+Most of those were provided by the course author, but were modified where it made sense.
 
 ## Notes on Data
 
@@ -91,13 +104,17 @@ pricing data and calculate key financial metrics in real time.
 
 ## The Most Notable Crates Used
 
-- [actix](https://crates.io/crates/actix), as Actor framework for Rust
+Not all of them are present in every commit.  
+The `git` commit history contains descriptive comments.
+
+- [actix](https://crates.io/crates/actix), as an Actor framework for Rust
 - [actix-rt](https://crates.io/crates/actix-rt), as Tokio-based single-threaded async runtime for the Actix ecosystem
 - [async-std](https://async.rs/), as an async library
 - [clap](https://crates.io/crates/clap), for CLI arguments parsing
 - [futures](https://crates.io/crates/futures), for an implementation of futures
 - [time](https://crates.io/crates/time), as a date and time library (used by `yahoo_finance_api`)
 - [Tokio](https://tokio.rs/), as an asynchronous runtime - not used directly, but as a dependency of some crates
+- [xactor](https://crates.io/crates/xactor), as a Rust Actors framework based on async-std
 - [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api), as an adapter for
   the [Yahoo! Finance API](https://finance.yahoo.com/) to fetch histories of market data quotes
 
@@ -138,3 +155,4 @@ Took 278.264ms to complete.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
           [this commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/commit/d4f53a7499ef9ceee988a6e3d5d26d518e25f6eb).
 - Find a way to measure time correctly when working with actors.
+- Add tracing or at least logging.

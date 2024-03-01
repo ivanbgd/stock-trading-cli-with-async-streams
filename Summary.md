@@ -1,4 +1,4 @@
-# Importance to project
+# Importance to Project
 
 - Actors are a different way of unifying and linking processing steps. As a programming pattern that is well supported
   by a framework it greatly facilitates building such pipelines with the ability to run across threads (or even multiple
@@ -38,7 +38,7 @@
 - Getting dependencies right is a large part of any Rust project. APIs change, maintainers change, and the language
   evolves. With the Rust team’s lean approach to the standard library, it’s important to avoid using multiple versions
   of the same crate or multiple crates with the same goal.
-- Processing streaming data is significantly easier with the actor pattern, while Rust’s ownership model lets you retain
+- Processing streaming data is significantly easier with the Actor pattern, while Rust’s ownership model lets you retain
   full control over memory copies.
 - Logging should always be an integral part of a complex application.  
   Crates like [log4rs](https://crates.io/crates/log4rs) allow a pluggable and configurable log mechanism to use in Rust.
