@@ -9,6 +9,8 @@ use crate::constants::WINDOW_SIZE;
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
 /// A single actor that downloads data, processes them and prints the results to console
+///
+/// It is stateless - it doesn't contain any data.
 pub struct MultiActor;
 
 impl Actor for MultiActor {
