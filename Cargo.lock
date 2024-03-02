@@ -970,12 +970,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lazy_static"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
-
-[[package]]
 name = "libc"
 version = "0.2.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1605,9 +1599,10 @@ dependencies = [
  "async-std",
  "clap",
  "futures",
- "lazy_static",
+ "once_cell",
  "rayon",
  "time",
+ "tokio",
  "yahoo_finance_api",
 ]
 
@@ -1784,7 +1779,19 @@ dependencies = [
  "pin-project-lite",
  "signal-hook-registry",
  "socket2 0.5.6",
+ "tokio-macros",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b8a1e28f2deaa14e508979454cb3a223b10b938b45af148bc0986de36f1923b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.50",
 ]
 
 [[package]]

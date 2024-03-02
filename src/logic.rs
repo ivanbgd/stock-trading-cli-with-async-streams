@@ -5,7 +5,7 @@ use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
-use lazy_static::lazy_static;
+use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -34,20 +34,9 @@ pub async fn main_loop() -> std::io::Result<()> {
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
     // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
 
-    // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
-    // let symbols = Arc::new(Mutex::new(symbols));
-
-    lazy_static! {
-        static ref SYMBOLS: &'static str = "A,AAPL";
-    }
-    // const SYMBOLS: &'static str = "A,AAPL";
-    let symbols: Vec<String> = SYMBOLS.split(",").map(|s| s.to_string()).collect(); // binding `symbols` declared here
-    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // error[E0597]: `symbols` does not live long enough
-
-    // lazy_static! {
-    //     static ref chunks_of_symbols: Vec<&'static [String]> =
-    //         || { symbols }.par_chunks(CHUNK_SIZE).collect();
-    // }
+    static SYMBOLS: OnceCell<Vec<String>> = OnceCell::new();
+    let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
+    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
 
     // // let symbols: Vec<&str> = args.symbols.split(",").collect();
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
@@ -98,15 +87,15 @@ pub async fn main_loop() -> std::io::Result<()> {
         // let _ = futures::future::join_all(queries).await; // Vec<()>
 
         let mut handles = vec![];
-        // let symbols = symbols.clone();
         for chunk in chunks_of_symbols.clone() {
             let handle = std::thread::spawn(move || async move {
                 handle_symbol_data(chunk, from, to).await;
             });
             handles.push(handle);
         }
-        // handle.join().unwrap().await;
-        // let _ = futures::future::join_all(handles).await;
+        // let _ = futures::future::join_all(handles).await; // Doesn't work in this case.
+
+        // This is serialized and slow. It works with `OnceCell`, though.
         for handle in handles {
             handle.join().unwrap().await;
         }
