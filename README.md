@@ -56,7 +56,8 @@ pricing data and calculate key financial metrics in real time.
     - With all S&P 500 symbols it took `84` seconds for it to complete.
 - Then we upgraded the main loop to use explicit concurrency with `async/await` paradigm.  
   It runs multiple instances of the same `Future` concurrently.  
-  We are using the [futures](https://crates.io/crates/futures) crate to help us do this.  
+  We are using the [futures](https://crates.io/crates/futures) crate to help us do
+  this: `futures::future::join_all(queries).await;`.  
   This uses the waiting time more efficiently.  
   This is not multithreading.  
   This can increase the program's I/O throughput dramatically, which may be needed to keep the strict schedule with an
@@ -73,26 +74,33 @@ pricing data and calculate key financial metrics in real time.
   before.
     - Namely, whether chunk size of symbols is equal 1 or 128, all symbols are processed in around `2.5` seconds.
 - If we modify `handle_symbol_data()` to take and process multiple symbols at the time, i.e., to work with *chunks* of
-  symbols, the execution time can change depending on the chunk size.
+  symbols, the execution time changes depending on the chunk size.
     - For example, for chunk size of 1, it remains `~2.5` s.
     - For chunk size equal 3, it is around `1.3` s!
     - For chunk size equal 5 or 6, it is around `1.2` s! Chunk size of 5 seems like a sweet-spot for this application
       with this implementation.
     - For chunk size equal 2 or 10, it is around `1.5` s.
     - For chunk size equal 128, it rises to over `13` s!
-- Using the [rayon](https://crates.io/crates/rayon) crate for parallelization keeps execution time at around `2.5`
-  seconds without chunking symbols.
 - Thanks to the fact that the calculations performed on the data are not super-intensive, we can conclude
   that `async/await` can be fast enough, even though it's mostly meant for I/O.
     - Namely, the calculations are light, and we are doing a lot of them frequently.
       We have around 500 symbols and several calculations per symbol.
       The data-fetching and data-processing functions are all asynchronous.
       We can conclude that scheduling a lot of lightweight async tasks on a loop can increase efficiency.
+- We are using `async` streams for improved efficiency (`async` streaming on a schedule).
+- Unit tests are also asynchronous.
+- Using the [rayon](https://crates.io/crates/rayon) crate for parallelization keeps execution time at around `2.5`
+  seconds without chunking symbols.
+    - We still use `futures::future::join_all(queries).await;` to join all tasks.
+- Using `rayon` with chunks yields the same results as above implementation with chunks.
+    - For chunk size equal 5, execution time is around `1.2` s! Chunk size of 5 again seems like a sweet-spot for this
+      application with this implementation.
+    - All CPU cores are really being employed (as can be seen in Task Manager).
+- Using `rayon` is easy. It has parallel iterators that support *chunking*. We can turn our sequential code into
+  parallel by using `rayon` easily.
 - We are probably limited by the data-fetching time from the Yahoo! Finance API. That's probably our bottleneck.
     - We need to fetch data for around 500 symbols and the function `get_quote_history()` fetches data for one symbol
       (called "ticker") at a time. It is asynchronous, but perhaps this is the best that we can do.
-- We are using `async` streams for improved efficiency (`async` streaming on a schedule).
-- Unit tests are also asynchronous.
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
     - This didn't prove to be a fast solution for this concrete problem.
     - It was on the order of synchronous and single-threaded `async` code, i.e., `~80-90` seconds, when actors were
