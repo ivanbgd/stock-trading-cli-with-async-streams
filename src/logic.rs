@@ -5,6 +5,7 @@ use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
+use lazy_static::lazy_static;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -31,11 +32,15 @@ pub async fn main_loop() -> std::io::Result<()> {
 
     // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
+    // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
 
-    // lazy_static! {
-    //     static ref SYMBOLS: &'static str = "A,AAPL";
-    // }
-    const SYMBOLS: &'static str = "A,AAPL";
+    // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    // let symbols = Arc::new(Mutex::new(symbols));
+
+    lazy_static! {
+        static ref SYMBOLS: &'static str = "A,AAPL";
+    }
+    // const SYMBOLS: &'static str = "A,AAPL";
     let symbols: Vec<String> = SYMBOLS.split(",").map(|s| s.to_string()).collect(); // binding `symbols` declared here
     let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // error[E0597]: `symbols` does not live long enough
 
@@ -44,8 +49,8 @@ pub async fn main_loop() -> std::io::Result<()> {
     //         || { symbols }.par_chunks(CHUNK_SIZE).collect();
     // }
 
-    // let symbols: Vec<&str> = args.symbols.split(",").collect();
-    // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
+    // // let symbols: Vec<&str> = args.symbols.split(",").collect();
+    // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
     let actor_address = MultiActor.start();
     // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor);
@@ -96,7 +101,6 @@ pub async fn main_loop() -> std::io::Result<()> {
         // let symbols = symbols.clone();
         for chunk in chunks_of_symbols.clone() {
             let handle = std::thread::spawn(move || async move {
-                // argument requires that `symbols` is borrowed for `'static`
                 handle_symbol_data(chunk, from, to).await;
             });
             handles.push(handle);
@@ -113,4 +117,4 @@ pub async fn main_loop() -> std::io::Result<()> {
     System::current().stop();
 
     Ok(())
-} // `symbols` dropped here while still borrowed
+}
