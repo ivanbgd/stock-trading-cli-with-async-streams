@@ -58,13 +58,12 @@ pub async fn main_loop() -> std::io::Result<()> {
         let queries: Vec<_> = chunks_of_symbols
             .par_iter()
             .map(|chunk| async {
-                actor_address
-                    .send(QuoteRequest {
-                        chunk: chunk.to_vec(),
-                        from,
-                        to,
-                    })
-                    .await
+                actor_address.do_send(QuoteRequest {
+                    chunk: chunk.to_vec(),
+                    from,
+                    to,
+                })
+                // .await
             })
             .collect();
         let _ = futures::future::join_all(queries).await;
