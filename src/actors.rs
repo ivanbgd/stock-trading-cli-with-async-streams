@@ -70,43 +70,42 @@ async fn fetch_closing_data(
 /// We don't need to return anything.
 pub async fn handle_symbol_data(
     // symbols: &[&str],
-    // symbols: &[String],
-    symbol: &String,
+    symbols: &[String],
     beginning: OffsetDateTime,
     end: OffsetDateTime,
 ) {
     let provider = yahoo::YahooConnector::new();
 
-    // for symbol in symbols {
-    let closes = fetch_closing_data(symbol, beginning, end, &provider)
-        .await
-        .unwrap_or_default();
+    for symbol in symbols {
+        let closes = fetch_closing_data(symbol, beginning, end, &provider)
+            .await
+            .unwrap_or_default();
 
-    if !closes.is_empty() {
-        let min = MinPrice {};
-        let max = MaxPrice {};
-        let price_diff = PriceDifference {};
-        let n_window_sma = WindowedSMA {
-            window_size: WINDOW_SIZE,
-        };
+        if !closes.is_empty() {
+            let min = MinPrice {};
+            let max = MaxPrice {};
+            let price_diff = PriceDifference {};
+            let n_window_sma = WindowedSMA {
+                window_size: WINDOW_SIZE,
+            };
 
-        let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
-        let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
-        let last_price = *closes.last().expect("Expected non-empty closes.");
-        let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
-        let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
+            let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
+            let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
+            let last_price = *closes.last().expect("Expected non-empty closes.");
+            let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
+            let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
 
-        // A simple way to output CSV data
-        println!(
-            "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-            OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'."),
-            symbol,
-            last_price,
-            pct_change * 100.0,
-            period_min,
-            period_max,
-            sma.last().unwrap_or(&0.0)
-        );
+            // A simple way to output CSV data
+            println!(
+                "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+                OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'."),
+                symbol,
+                last_price,
+                pct_change * 100.0,
+                period_min,
+                period_max,
+                sma.last().unwrap_or(&0.0)
+            );
+        }
     }
-    // }
 }

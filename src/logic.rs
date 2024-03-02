@@ -29,7 +29,8 @@ pub async fn main_loop() -> std::io::Result<()> {
 
     let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
     // let symbols: Vec<&str> = args.symbols.split(",").collect();
-    let _chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
+    // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
+    let chunks_of_symbols: Vec<Vec<String>> = symbols.into_par_iter().chunks(CHUNK_SIZE).collect();
 
     // let actor_address = MultiActor.start();
 
@@ -55,9 +56,9 @@ pub async fn main_loop() -> std::io::Result<()> {
         // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
         // Explicit concurrency with async/await paradigm:
         // Run multiple instances of the same Future concurrently.
-        let queries: Vec<_> = symbols
+        let queries: Vec<_> = chunks_of_symbols
             .par_iter()
-            .map(|symbol| handle_symbol_data(symbol, from, to))
+            .map(|chunk| handle_symbol_data(chunk, from, to))
             .collect();
         let _ = futures::future::join_all(queries).await; // Vec<()>
 
