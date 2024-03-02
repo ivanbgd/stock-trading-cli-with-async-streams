@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 
-// use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, WrapFuture};
+use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, WrapFuture};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -8,38 +8,38 @@ use yahoo_finance_api as yahoo;
 use crate::constants::WINDOW_SIZE;
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
-// /// A single actor that downloads data, processes them and prints the results to console
-// pub struct MultiActor;
-//
-// impl Actor for MultiActor {
-//     type Context = Context<Self>;
-// }
-//
-// #[derive(Message)]
-// #[rtype(result = "()")]
-// pub struct QuoteRequest {
-//     pub chunk: Vec<String>,
-//     pub from: OffsetDateTime,
-//     pub to: OffsetDateTime,
-// }
-//
-// impl Handler<QuoteRequest> for MultiActor {
-//     type Result = ();
-//
-//     fn handle(&mut self, msg: QuoteRequest, ctx: &mut Self::Context) -> Self::Result {
-//         let symbols = msg.chunk;
-//         let from = msg.from;
-//         let to = msg.to;
-//
-//         async move {
-//             for symbol in symbols {
-//                 handle_symbol_data(&symbol, from, to).await;
-//             }
-//         }
-//         .into_actor(self)
-//         .spawn(ctx);
-//     }
-// }
+/// A single actor that downloads data, processes them and prints the results to console
+pub struct MultiActor;
+
+impl Actor for MultiActor {
+    type Context = Context<Self>;
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct QuoteRequest {
+    pub chunk: Vec<String>,
+    pub from: OffsetDateTime,
+    pub to: OffsetDateTime,
+}
+
+impl Handler<QuoteRequest> for MultiActor {
+    type Result = ();
+
+    fn handle(&mut self, msg: QuoteRequest, ctx: &mut Self::Context) -> Self::Result {
+        let symbols = msg.chunk;
+        let from = msg.from;
+        let to = msg.to;
+
+        async move {
+            // for symbol in symbols {
+            handle_symbol_data(&symbols, from, to).await;
+            // }
+        }
+        .into_actor(self)
+        .spawn(ctx);
+    }
+}
 
 /// Retrieve data from a data source and extract the closing prices
 ///
