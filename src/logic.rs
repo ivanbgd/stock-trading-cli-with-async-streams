@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
+use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::actors::handle_symbol_data;
@@ -28,7 +29,7 @@ pub async fn main_loop() -> std::io::Result<()> {
 
     let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
     // let symbols: Vec<&str> = args.symbols.split(",").collect();
-    let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
+    let _chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
     // let actor_address = MultiActor.start();
 
@@ -51,12 +52,12 @@ pub async fn main_loop() -> std::io::Result<()> {
         //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         // }
 
-        // THE FASTEST SOLUTION - 1. s with chunk size of 5
+        // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
         // Explicit concurrency with async/await paradigm:
         // Run multiple instances of the same Future concurrently.
-        let queries: Vec<_> = chunks_of_symbols
-            .clone()
-            .map(|chunk| handle_symbol_data(chunk, from, to))
+        let queries: Vec<_> = symbols
+            .par_iter()
+            .map(|symbol| handle_symbol_data(symbol, from, to))
             .collect();
         let _ = futures::future::join_all(queries).await; // Vec<()>
 

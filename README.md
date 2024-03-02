@@ -80,6 +80,8 @@ pricing data and calculate key financial metrics in real time.
       with this implementation.
     - For chunk size equal 2 or 10, it is around `1.5` s.
     - For chunk size equal 128, it rises to over `13` s!
+- Using the [rayon](https://crates.io/crates/rayon) crate for parallelization keeps execution time at around `2.5`
+  seconds without chunking symbols.
 - Thanks to the fact that the calculations performed on the data are not super-intensive, we can conclude
   that `async/await` can be fast enough, even though it's mostly meant for I/O.
     - Namely, the calculations are light, and we are doing a lot of them frequently.
@@ -136,6 +138,7 @@ The `git` commit history contains descriptive comments.
 - [clap](https://crates.io/crates/clap), for CLI arguments parsing
 - [futures](https://crates.io/crates/futures), for an implementation of futures (required for explicit concurrency
   with `async/await` paradigm)
+- [rayon](https://crates.io/crates/rayon), as a data-parallelism library for Rust
 - [time](https://crates.io/crates/time), as a date and time library (used by `yahoo_finance_api`)
 - [Tokio](https://tokio.rs/), as an asynchronous runtime - not used directly, but as a dependency of some crates
 - [xactor](https://crates.io/crates/xactor), as a Rust Actors framework based on async-std
