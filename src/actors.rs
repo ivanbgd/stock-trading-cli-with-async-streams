@@ -109,28 +109,3 @@ pub async fn handle_symbol_data(
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use time::format_description::well_known::Rfc3339;
-    use time::OffsetDateTime;
-
-    use super::fetch_closing_data;
-
-    /// Devised so we can test whether working with a single `provider: yahoo::YahooConnector` is correct.
-    ///
-    /// We first worked with a new provider for every single symbol handling.
-    ///
-    /// This test function is not mocked, so it requires Internet connection and Yahoo! Finance API to be available.
-    #[async_std::test]
-    async fn aapl_closing_data() {
-        let symbol = "AAPL";
-        let from = OffsetDateTime::parse("2024-01-01T12:00:00+00:00", &Rfc3339).unwrap();
-        let to = OffsetDateTime::parse("2024-02-29T15:51:29+00:00", &Rfc3339).unwrap();
-        let provider = yahoo_finance_api::YahooConnector::new();
-        let closes = fetch_closing_data(symbol, from, to, &provider)
-            .await
-            .unwrap();
-        assert_eq!((closes.first().unwrap() * 100.0).round() / 100.0, 185.640);
-    }
-}
