@@ -53,42 +53,47 @@ pricing data and calculate key financial metrics in real time.
 
 - We started with synchronous code. It was slow.
 - Then we moved to a regular (sequential, single-threaded) `async` version.
-    - With all S&P 500 symbols it took 84 seconds for it to complete.
+    - With all S&P 500 symbols it took `84` seconds for it to complete.
 - Then we upgraded the main loop to use explicit concurrency with `async/await` paradigm.  
   It runs multiple instances of the same `Future` concurrently.  
-  We are using the [futures](https://crates.io/crates/futures) crate to help us do this.
+  We are using the [futures](https://crates.io/crates/futures) crate to help us do this.  
   This uses the waiting time more efficiently.  
-  This is not multithreading.
+  This is not multithreading.  
   This can increase the program's I/O throughput dramatically, which may be needed to keep the strict schedule with an
   async stream (that ticks every `n` seconds, where `n = 30` by default), without having to manage threads or data
   structures to retrieve results.  
   We fetch the S&P 500 data every `n` seconds.
-    - This way it takes the program less than **two seconds** to fetch all S&P 500 data, instead of 84 seconds as
+    - This way it takes the program less than `2` seconds to fetch all S&P 500 data, instead of `84` seconds as
       before, on the same computer and at the same time of the day.
     - That's a speed-up of around 50 times on the computer.
-    - This further means that we can fetch data a lot more frequently than the default 30 seconds.
+    - This further means that we can fetch data a lot more frequently than the default `30` seconds.
     - This proved to be the fastest solution for this concrete problem.
-- Using the same explicit concurrency with `async/await` paradigm but with configurable chunk size gives more or less
+- Using the same explicit concurrency with `async/await` paradigm but with configurable *chunk* size gives more or less
   the same execution time. This is the case in which our function `handle_symbol_data()` still processes one symbol, as
   before.
-    - Namely, whether chunk size of symbols is equal 1 or 128, all symbols are processed in around 2.5 seconds.
-- If we modify `handle_symbol_data()` to take and process multiple symbols at the time, the time doesn't change much (if
-  at all) for the case of chunk size equal 1: 2.4 s. It does change radically for the chunk size equal 128: it rises to
-  over 13 seconds!
+    - Namely, whether chunk size of symbols is equal 1 or 128, all symbols are processed in around `2.5` seconds.
+- If we modify `handle_symbol_data()` to take and process multiple symbols at the time, i.e., to work with *chunks* of
+  symbols, the execution time can change depending on the chunk size.
+    - For example, for chunk size of 1, it remains `~2.5` s.
+    - For chunk size equal 3, it is around `1.3` s!
+    - For chunk size equal 5 or 6, it is around `1.2` s! Chunk size of 5 seems like a sweet-spot for this application
+      with this implementation.
+    - For chunk size equal 2 or 10, it is around `1.5` s.
+    - For chunk size equal 128, it rises to over `13` s!
 - Thanks to the fact that the calculations performed on the data are not super-intensive, we can conclude
   that `async/await` can be fast enough, even though it's mostly meant for I/O.
     - Namely, the calculations are light, and we are doing a lot of them frequently.
       We have around 500 symbols and several calculations per symbol.
       The data-fetching and data-processing functions are all asynchronous.
       We can conclude that scheduling a lot of lightweight async tasks on a loop can increase efficiency.
-- It could be the case that we are limited by the data-fetching time from the Yahoo! Finance API.
-    - We need to fetch data for around 500 symbols and the function `get_quote_history` fetches data for one symbol
+- We are probably limited by the data-fetching time from the Yahoo! Finance API. That's probably our bottleneck.
+    - We need to fetch data for around 500 symbols and the function `get_quote_history()` fetches data for one symbol
       (called "ticker") at a time. It is asynchronous, but perhaps this is the best that we can do.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
     - This didn't prove to be a fast solution for this concrete problem.
-    - It was on the order of synchronous and single-threaded `async` code, i.e., ~80-90 seconds, when actors were
+    - It was on the order of synchronous and single-threaded `async` code, i.e., `~80-90` seconds, when actors were
       processing one symbol at a time (when a request message contained only one symbol to process). This applies in
       case of the `actix` crate with a single `MultiActor` that does all three operations, and in case of three actors
       when using the `xactor` crate.

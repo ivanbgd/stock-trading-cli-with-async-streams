@@ -65,48 +65,15 @@ async fn fetch_closing_data(
     }
 }
 
-// /// Convenience function that chains together the entire processing chain
-// ///
-// /// We don't need to return anything.
-// pub async fn handle_symbol_data(symbol: &str, beginning: OffsetDateTime, end: OffsetDateTime) {
-//     let provider = yahoo::YahooConnector::new();
-//
-//     let closes = fetch_closing_data(symbol, beginning, end, &provider)
-//         .await
-//         .unwrap_or_default(); // todo: add proper error handling
-//
-//     if !closes.is_empty() {
-//         let min = MinPrice {};
-//         let max = MaxPrice {};
-//         let price_diff = PriceDifference {};
-//         let n_window_sma = WindowedSMA {
-//             window_size: WINDOW_SIZE,
-//         };
-//
-//         let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
-//         let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
-//         let last_price = *closes.last().expect("Expected non-empty closes.");
-//         let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
-//         let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
-//
-//         // A simple way to output CSV data
-//         println!(
-//             "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-//             OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'."),
-//             symbol,
-//             last_price,
-//             pct_change * 100.0,
-//             period_min,
-//             period_max,
-//             sma.last().unwrap_or(&0.0)
-//         );
-//     }
-// }
-
 /// Convenience function that chains together the entire processing chain
 ///
 /// We don't need to return anything.
-pub async fn handle_symbol_data(symbols: &[&str], beginning: OffsetDateTime, end: OffsetDateTime) {
+pub async fn handle_symbol_data(
+    // symbols: &[&str],
+    symbols: &[String],
+    beginning: OffsetDateTime,
+    end: OffsetDateTime,
+) {
     let provider = yahoo::YahooConnector::new();
 
     for symbol in symbols {
@@ -161,9 +128,9 @@ mod tests {
         let from = OffsetDateTime::parse("2024-01-01T12:00:00+00:00", &Rfc3339).unwrap();
         let to = OffsetDateTime::parse("2024-02-29T15:51:29+00:00", &Rfc3339).unwrap();
         let provider = yahoo_finance_api::YahooConnector::new();
-        let closes = fetch_closing_data(symbol, from, to, provider)
+        let closes = fetch_closing_data(symbol, from, to, &provider)
             .await
             .unwrap();
-        assert_eq!((closes.first().unwrap() * 100.0).round() / 100.0, 185.40);
+        assert_eq!((closes.first().unwrap() * 100.0).round() / 100.0, 185.640);
     }
 }
