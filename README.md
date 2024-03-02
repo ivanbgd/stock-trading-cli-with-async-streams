@@ -186,7 +186,9 @@ Took 278.264ms to complete.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
 - Find ways to publish and subscribe to messages without explicit calls.
-    - [actix](https://crates.io/crates/actix) doesn't support this feature at the time of this writing, unfortunately.
+    - [actix](https://crates.io/crates/actix) might support this feature through the use
+      of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);
+      also [here](https://actix.rs/docs/actix/address#recipient).
     - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
       been updated in about three years. Also, `actix` is far more popular.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in

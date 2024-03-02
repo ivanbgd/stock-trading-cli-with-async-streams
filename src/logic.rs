@@ -35,6 +35,7 @@ pub async fn main_loop() -> std::io::Result<()> {
     let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
 
     let actor_address = MultiActor.start();
+    // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor);
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 

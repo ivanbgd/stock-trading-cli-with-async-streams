@@ -10,13 +10,16 @@ use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, Wind
 
 /// A single actor that downloads data, processes them and prints the results to console
 ///
-/// It is stateless - it doesn't contain any data.
+/// It is stateless - it doesn't contain any user data.
 pub struct MultiActor;
 
+/// Implementation of the `Actor` trait for the [`MultiActor`] actor
 impl Actor for MultiActor {
     type Context = Context<Self>;
+    // type Context = SyncContext<Self>;
 }
 
+/// The [`QuoteRequest`] message
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct QuoteRequest {
@@ -25,6 +28,7 @@ pub struct QuoteRequest {
     pub to: OffsetDateTime,
 }
 
+/// The [`QuoteRequest`] message handler for the [`MultiActor`] actor
 impl Handler<QuoteRequest> for MultiActor {
     type Result = ();
 
