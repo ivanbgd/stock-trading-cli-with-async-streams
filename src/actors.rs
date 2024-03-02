@@ -16,7 +16,7 @@ pub struct MultiActor;
 /// Implementation of the `Actor` trait for the [`MultiActor`] actor
 impl Actor for MultiActor {
     type Context = Context<Self>;
-    // type Context = SyncContext<Self>;
+    // type Context = SyncContext<Self>; // Doesn't work.
 }
 
 /// The [`QuoteRequest`] message

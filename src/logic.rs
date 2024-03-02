@@ -42,7 +42,7 @@ pub async fn main_loop() -> std::io::Result<()> {
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
     let actor_address = MultiActor.start();
-    // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor);
+    // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work.
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
@@ -86,19 +86,13 @@ pub async fn main_loop() -> std::io::Result<()> {
         //     .collect();
         // let _ = futures::future::join_all(queries).await; // Vec<()>
 
-        let mut handles = vec![];
+        // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
+        // The `main()` function requires `#[actix::main]`.
+        // If we instead put `#[tokio::main]` it throws a panic.
         for chunk in chunks_of_symbols.clone() {
-            let handle = std::thread::spawn(move || async move {
-                handle_symbol_data(chunk, from, to).await;
-            });
-            handles.push(handle);
+            tokio::spawn(handle_symbol_data(chunk, from, to));
         }
-        // let _ = futures::future::join_all(handles).await; // Doesn't work in this case.
-
-        // This is serialized and slow. It works with `OnceCell`, though.
-        for handle in handles {
-            handle.join().unwrap().await;
-        }
+        // let _ = futures::future::join_all(handles).await;
 
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
