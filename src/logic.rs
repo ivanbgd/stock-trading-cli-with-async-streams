@@ -5,6 +5,7 @@ use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
+use lazy_static::lazy_static;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -29,19 +30,28 @@ pub async fn main_loop() -> std::io::Result<()> {
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
 
-    let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
-    //  ------- binding `symbols` declared here
+    // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
 
+    lazy_static! {
+        static ref SYMBOLS: String = "A,AAPL".to_string();
+    }
+    let symbols: Vec<String> = SYMBOLS.split(",").map(|s| s.to_string()).collect();
     let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // error[E0597]: `symbols` does not live long enough
 
-    //                                      ^^^^^^^ borrowed value does not live long enough
+    // lazy_static! {
+    //     static ref chunks_of_symbols: Vec<&'static [String]> =
+    //         || { symbols }.par_chunks(CHUNK_SIZE).collect();
+    // }
+
+    // let symbols: Vec<&str> = args.symbols.split(",").collect();
+    // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
     let actor_address = MultiActor.start();
     // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor);
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // let to = OffsetDateTime::now_utc();
     while let Some(_) = interval.next().await {
         // We always want a fresh period end time.
         let to = OffsetDateTime::now_utc();
@@ -53,11 +63,39 @@ pub async fn main_loop() -> std::io::Result<()> {
         println!("{}", CSV_HEADER);
 
         let start = Instant::now();
+
+        // for chunk in chunks_of_symbols.clone() {
+        //     let chunk = chunk.to_vec();
+        //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
+        // }
+
+        // let queries: Vec<_> = chunks_of_symbols
+        //     .par_iter()
+        //     .map(|chunk| async {
+        //         actor_address
+        //             .send(QuoteRequest {
+        //                 chunk: chunk.to_vec(),
+        //                 from,
+        //                 to,
+        //             })
+        //             .await
+        //     })
+        //     .collect();
+        // let _ = futures::future::join_all(queries).await;
+
+        // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
+        // // Explicit concurrency with async/await paradigm:
+        // // Run multiple instances of the same Future concurrently.
+        // let queries: Vec<_> = chunks_of_symbols
+        //     .par_iter()
+        //     .map(|chunk| handle_symbol_data(chunk, from, to))
+        //     .collect();
+        // let _ = futures::future::join_all(queries).await; // Vec<()>
+
         let mut handles = vec![];
         // let symbols = symbols.clone();
         for chunk in chunks_of_symbols.clone() {
             let handle = std::thread::spawn(move || async move {
-                //                        ^ argument requires that `symbols` is borrowed for `'static`
                 handle_symbol_data(chunk, from, to).await;
             });
             handles.push(handle);
@@ -70,9 +108,8 @@ pub async fn main_loop() -> std::io::Result<()> {
 
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
-    // - `symbols` dropped here while still borrowed
 
     System::current().stop();
 
     Ok(())
-}
+} // `symbols` dropped here while still borrowed
