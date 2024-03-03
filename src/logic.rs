@@ -37,7 +37,7 @@ pub async fn main_loop() -> std::io::Result<()> {
     static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
     // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
     let symbols = SYMBOLS.get_or_init(|| symbols);
-    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
+    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
 
     // // let symbols: Vec<&str> = args.symbols.split(",").collect();
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
