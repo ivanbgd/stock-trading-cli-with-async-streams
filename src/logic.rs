@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use actix::Actor;
@@ -5,7 +6,6 @@ use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
-use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -34,7 +34,7 @@ pub async fn main_loop() -> std::io::Result<()> {
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
     // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
 
-    static SYMBOLS: OnceCell<Vec<String>> = OnceCell::new();
+    static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
     let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
     let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
 

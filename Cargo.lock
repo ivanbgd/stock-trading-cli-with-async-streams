@@ -1599,7 +1599,6 @@ dependencies = [
  "async-std",
  "clap",
  "futures",
- "once_cell",
  "rayon",
  "time",
  "tokio",

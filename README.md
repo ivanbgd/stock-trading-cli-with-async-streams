@@ -101,7 +101,11 @@ pricing data and calculate key financial metrics in real time.
 - We also implemented classical multithreading with `tokio::spawn()`.
     - This requires using the crate [once_cell](https://crates.io/crates/once_cell) and its `once_cell::sync::OnceCell`.
       It is needed to initialize the variable `symbols` that holds symbols that a user provides on the command line.
+    - Alternatively, we can use `std::sync::OnceLock` instead of `once_cell::sync::OnceCell` with same results.
     - *Note*: This implementation doesn't employ `rayon`.
+    - Performance is the same as with explicit concurrency with `async/await` or with `rayon`.
+        - The sweet spot for chunk size is 5, and that yields execution time of `1.2` s.
+- A higher CPU utilization can be observed with chunk size of 5 than with chunk size of 128.
 - All measurements were performed with 501 S&P symbols provided.
     - Comments in code also assume all 501 symbols.
 - If only 10 symbols are provided, instead of 501, then the fastest solution is with chunk size of 1, around `250` ms.
