@@ -9,7 +9,7 @@ use clap::Parser;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{handle_symbol_data, MultiActor};
+use crate::actors::{MultiActor, QuoteRequest};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 
@@ -43,7 +43,7 @@ pub async fn main_loop() -> std::io::Result<()> {
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
     let actor_address = MultiActor.start();
-    // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work.
+    // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work (because of async handler).
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
@@ -64,19 +64,19 @@ pub async fn main_loop() -> std::io::Result<()> {
         //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         // }
 
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| async {
-        //         actor_address
-        //             .send(QuoteRequest {
-        //                 chunk: chunk.to_vec(),
-        //                 from,
-        //                 to,
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
+        let queries: Vec<_> = chunks_of_symbols
+            .par_iter()
+            .map(|chunk| async {
+                actor_address
+                    .send(QuoteRequest {
+                        chunk: chunk.to_vec(),
+                        from,
+                        to,
+                    })
+                    .await
+            })
+            .collect();
+        let _ = futures::future::join_all(queries).await;
 
         // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
         // // Explicit concurrency with async/await paradigm:
@@ -87,15 +87,15 @@ pub async fn main_loop() -> std::io::Result<()> {
         //     .collect();
         // let _ = futures::future::join_all(queries).await; // Vec<()>
 
-        // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
-        // The `main()` function requires `#[actix::main]`.
-        // If we instead put `#[tokio::main]` it throws a panic.
-        let mut handles = vec![];
-        for chunk in chunks_of_symbols.clone() {
-            let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
-            handles.push(handle);
-        }
-        let _ = futures::future::join_all(handles).await;
+        // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
+        // // The `main()` function requires `#[actix::main]`.
+        // // If we instead put `#[tokio::main]` it throws a panic.
+        // let mut handles = vec![];
+        // for chunk in chunks_of_symbols.clone() {
+        //     let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
+        //     handles.push(handle);
+        // }
+        // let _ = futures::future::join_all(handles).await;
 
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
