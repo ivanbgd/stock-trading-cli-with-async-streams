@@ -89,10 +89,12 @@ pub async fn main_loop() -> std::io::Result<()> {
         // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
         // The `main()` function requires `#[actix::main]`.
         // If we instead put `#[tokio::main]` it throws a panic.
+        let mut handles = vec![];
         for chunk in chunks_of_symbols.clone() {
-            tokio::spawn(handle_symbol_data(chunk, from, to));
+            let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
+            handles.push(handle);
         }
-        // let _ = futures::future::join_all(handles).await;
+        let _ = futures::future::join_all(handles).await;
 
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }

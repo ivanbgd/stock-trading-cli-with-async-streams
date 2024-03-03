@@ -98,6 +98,15 @@ pricing data and calculate key financial metrics in real time.
     - All CPU cores are really being employed (as can be seen in Task Manager).
 - Using `rayon` is easy. It has parallel iterators that support *chunking*. We can turn our sequential code into
   parallel by using `rayon` easily.
+- We also implemented classical multithreading with `tokio::spawn()`.
+    - This requires using the crate [once_cell](https://crates.io/crates/once_cell) and its `once_cell::sync::OnceCell`.
+      It is needed to initialize the variable `symbols` that holds symbols that a user provides on the command line.
+    - *Note*: This implementation doesn't employ `rayon`.
+- All measurements were performed with 501 S&P symbols provided.
+    - Comments in code also assume all 501 symbols.
+- If only 10 symbols are provided, instead of 501, then the fastest solution is with chunk size of 1, around `250` ms.
+    - Chunk size of 5 is slower, around `600` ms.
+    - Chunk sizes of 10 or 128 are very slow, over `1` s!
 - We are probably limited by the data-fetching time from the Yahoo! Finance API. That's probably our bottleneck.
     - We need to fetch data for around 500 symbols and the function `get_quote_history()` fetches data for one symbol
       (called "ticker") at a time. It is asynchronous, but perhaps this is the best that we can do.
@@ -150,23 +159,31 @@ The `git` commit history contains descriptive comments.
   with `async/await` paradigm)
 - [rayon](https://crates.io/crates/rayon), as a data-parallelism library for Rust
 - [time](https://crates.io/crates/time), as a date and time library (used by `yahoo_finance_api`)
-- [Tokio](https://tokio.rs/), as an asynchronous runtime - not used directly, but as a dependency of some crates
+- [Tokio](https://tokio.rs/), as an asynchronous runtime - used both directly and as a dependency of some other crates
 - [xactor](https://crates.io/crates/xactor), as a Rust Actors framework based on async-std
 - [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api), as an adapter for
   the [Yahoo! Finance API](https://finance.yahoo.com/) to fetch histories of market data quotes
 
 ## Running the App
 
+- The application requires the `from` and the `symbols` arguments.
+- The `from` date and time argument should be provided in the [RFC3339](https://datatracker.ietf.org/doc/html/rfc3339)
+  format.
+- The `symbols` argument should contain comma-separated S&P symbols (tickers), with no blanks.
+- The `to` date and time are assumed as the current time instant, at the moment of execution of each iteration of the
+  loop (at each new interval).
+- The example below demonstrates how to run the app.
+- The output date and time are also in the `RFC3339` format.
+- The program runs in a loop with a specified interval (in [src/constants.rs](src/constants.rs)).
+
 ### Example
 
 ```shell
 $ cargo run -- --from 2023-07-03T12:00:09+00:00 --symbols AAPL,AMD,AMZN,GOOG,KO,LYFT,META,MSFT,NVDA,UBER
 
-period start,symbol,price,change %,min,max,30d avg
-
-
 *** 2024-02-27 19:42:58.0795392 +00:00:00 ***
 
+period start,symbol,price,change %,min,max,30d avg
 2023-07-03T12:00:09Z,AMD,$177.65,53.38%,$93.67,$181.86,$172.12
 2023-07-03T12:00:09Z,GOOG,$140.12,16.23%,$116.87,$154.84,$146.27
 2023-07-03T12:00:09Z,LYFT,$16.63,64.00%,$9.17,$19.03,$13.90
@@ -188,7 +205,7 @@ Took 278.264ms to complete.
 - Find ways to publish and subscribe to messages without explicit calls.
     - [actix](https://crates.io/crates/actix) might support this feature through the use
       of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);
-      also [here](https://actix.rs/docs/actix/address#recipient).
+      also [see here](https://actix.rs/docs/actix/address#recipient).
     - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
       been updated in about three years. Also, `actix` is far more popular.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
