@@ -177,11 +177,11 @@ The `git` commit history contains descriptive comments.
 - The `symbols` argument should contain comma-separated S&P symbols (tickers), with no blanks.
 - The `to` date and time are assumed as the current time instant, at the moment of execution of each iteration of the
   loop (at each new interval).
-- The example below demonstrates how to run the app.
+- The examples below demonstrate how to run the app.
 - The output date and time are also in the `RFC3339` format.
 - The program runs in a loop with a specified interval (in [src/constants.rs](src/constants.rs)).
 
-### Example
+### Example 1: Provide Some Symbols On the Command Line
 
 ```shell
 $ cargo run -- --from 2023-07-03T12:00:09+00:00 --symbols AAPL,AMD,AMZN,GOOG,KO,LYFT,META,MSFT,NVDA,UBER
@@ -201,6 +201,18 @@ period start,symbol,price,change %,min,max,30d avg
 2023-07-03T12:00:09Z,KO,$60.17,-0.67%,$52.38,$63.05,$59.97
 
 Took 278.264ms to complete.
+```
+
+### Example 2: Provide All Symbols From a File
+
+```shell
+$ cargo run -- --from 2023-07-03T12:00:09+00:00 --symbols "$(cat sp500_feb_2024.csv)"
+```
+
+Or, equivalently:
+
+```shell
+$ export SYMBOLS="$(cat sp500_feb_2024.csv)" && cargo run -- --from 2023-07-03T12:00:09+00:00 --symbols $SYMBOLS
 ```
 
 ## Potential Modifications, Improvements or Additions
