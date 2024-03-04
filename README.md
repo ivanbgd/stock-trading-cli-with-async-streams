@@ -99,10 +99,13 @@ pricing data and calculate key financial metrics in real time.
 - Using `rayon` is easy. It has parallel iterators that support *chunking*. We can turn our sequential code into
   parallel by using `rayon` easily.
 - We also implemented classical multithreading with `tokio::spawn()`.
-    - This requires using the crate [once_cell](https://crates.io/crates/once_cell) and its `once_cell::sync::OnceCell`.
+    - This requires using the crate [once_cell](https://crates.io/crates/once_cell) and its
+      struct `once_cell::sync::OnceCell`.
       It is needed to initialize the variable `symbols` that holds symbols that a user provides on the command line.
-    - Alternatively, we can use [std::sync::OnceLock](https://doc.rust-lang.org/nightly/std/sync/struct.OnceLock.html)
+    - Starting with [Rust 1.70.0](https://blog.rust-lang.org/2023/06/01/Rust-1.70.0.html#oncecell-and-oncelock),
+      we can use the standard library's [std::sync::OnceLock](https://doc.rust-lang.org/std/sync/struct.OnceLock.html)
       instead of `once_cell::sync::OnceCell` with same results.
+        - The functionality has been ported from the crate to the standard library.
     - *Note*: This implementation doesn't employ `rayon`.
     - Performance is the same as with explicit concurrency with `async/await` or with `rayon`.
         - The sweet spot for chunk size is again 5, and that yields execution time of `1.2` s.
