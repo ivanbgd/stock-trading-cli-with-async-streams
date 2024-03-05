@@ -109,6 +109,8 @@ pricing data and calculate key financial metrics in real time.
     - *Note*: This implementation doesn't employ `rayon`.
     - Performance is the same as with explicit concurrency with `async/await` or with `rayon`.
         - The sweet spot for chunk size is again 5, and that yields execution time of `1.2` s.
+- Wrapping `symbols` in `std::sync::Arc` and using `std::thread::scope` provides a working solution that is almost as
+  fast as other fast multithreading solutions.
 - A higher CPU utilization can be observed with chunk size of 5 than with chunk size of 128, for example, which is good.
 - All measurements were performed with 501 S&P symbols provided.
     - Comments in code also assume all 501 symbols.

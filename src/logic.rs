@@ -1,15 +1,17 @@
-use std::sync::OnceLock;
+use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
-use actix::Actor;
 use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
-use rayon::prelude::*;
+// use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{MultiActor, QuoteRequest};
+// use actix::Actor;
+use crate::actors::handle_symbol_data;
+// use crate::actors::{MultiActor, QuoteRequest};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 
@@ -34,16 +36,21 @@ pub async fn main_loop() -> std::io::Result<()> {
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
     // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
 
-    static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
-    // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
-    let symbols = SYMBOLS.get_or_init(|| symbols);
-    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
+    let symbols: Arc<Vec<String>> = Arc::new(symbols);
+    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
+    // let chunks_of_symbols: Arc<Vec<&[String]>> = Arc::new(symbols.chunks(CHUNK_SIZE).collect());
+
+    // static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
+    // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
+    // let symbols = SYMBOLS.get_or_init(|| symbols);
+    // // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
+    // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
 
     // // let symbols: Vec<&str> = args.symbols.split(",").collect();
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
-    let actor_address = MultiActor.start();
-    // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work (because of async handler).
+    // let actor_address = MultiActor.start();
+    // // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work (because of async handler).
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
@@ -59,24 +66,35 @@ pub async fn main_loop() -> std::io::Result<()> {
 
         let start = Instant::now();
 
+        // Almost as fast
+        let mut handles = vec![];
+        for chunk in chunks_of_symbols.clone() {
+            let handle = thread::scope(move |_| async move {
+                handle_symbol_data(chunk, from, to).await;
+            });
+            handles.push(handle);
+        }
+
+        let _ = futures::future::join_all(handles).await;
+
         // for chunk in chunks_of_symbols.clone() {
         //     let chunk = chunk.to_vec();
         //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         // }
 
-        let queries: Vec<_> = chunks_of_symbols
-            .par_iter()
-            .map(|chunk| async {
-                actor_address
-                    .send(QuoteRequest {
-                        chunk: chunk.to_vec(),
-                        from,
-                        to,
-                    })
-                    .await
-            })
-            .collect();
-        let _ = futures::future::join_all(queries).await;
+        // let queries: Vec<_> = chunks_of_symbols
+        //     .par_iter()
+        //     .map(|chunk| async {
+        //         actor_address
+        //             .send(QuoteRequest {
+        //                 chunk: chunk.to_vec(),
+        //                 from,
+        //                 to,
+        //             })
+        //             .await
+        //     })
+        //     .collect();
+        // let _ = futures::future::join_all(queries).await;
 
         // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
         // // Explicit concurrency with async/await paradigm:
