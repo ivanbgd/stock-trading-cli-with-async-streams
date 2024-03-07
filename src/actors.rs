@@ -1,6 +1,4 @@
-use std::io::{Error, ErrorKind};
-
-use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, ResponseFuture, WrapFuture};
+use actix::{Actor, Context, ContextFutureSpawner, Handler, Message, WrapFuture};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -14,8 +12,8 @@ use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, Wind
 ///
 /// Expected response is a vector of closing prices for the symbol for the period. todo: perhaps return nothing but call/spawn a ProcessorWriterActor?!
 #[derive(Message)]
-// #[rtype(result = "Result<Vec<f64>, ()>")]
-#[rtype(result = "Vec<f64>")]
+// #[rtype(result = "Result<(), std::io::Error>")] todo remove
+#[rtype(result = "()")]
 pub struct QuoteRequestMsg {
     pub symbol: String,
     pub from: OffsetDateTime,
@@ -35,37 +33,71 @@ impl Actor for FetchActor {
 impl Handler<QuoteRequestMsg> for FetchActor {
     // type Result = Result<Vec<f64>, ()>;
     // type Result = ResponseFuture<Result<Vec<f64>, ()>>;
-    type Result = ResponseFuture<Vec<f64>>;
+    // type Result = Result<(), std::io::Error>;
+    type Result = ();
 
-    fn handle(&mut self, msg: QuoteRequestMsg, _ctx: &mut Self::Context) -> Self::Result {
+    /// The [`QuoteRequestMsg`] message handler for the [`FetchActor`] actor
+    ///
+    /// Spawns a new actor and sends it a [`SymbolClosesMsg`] message. TODO check!
+    ///
+    /// The message contains a `symbol` and a vector of closing prices in case there was no error
+    /// when fetching the data, or an empty vector in case of an error, in which case it prints
+    /// the error message to `stderr`.
+    ///
+    /// So, in case of an API error for a symbol, when trying to fetch its data,
+    /// we don't break the program but rather continue.
+    fn handle(&mut self, msg: QuoteRequestMsg, ctx: &mut Self::Context) -> Self::Result {
         let symbol = msg.symbol;
         let from = msg.from;
         let to = msg.to;
 
         let provider = yahoo::YahooConnector::new();
 
-        Box::pin(async move {
-            let closes = fetch_closing_data(&symbol, from, to, &provider)
+        async move {
+            let msg = match fetch_closing_data(&symbol, from, to, &provider).await {
+                Ok(closes) => SymbolClosesMsg {
+                    symbol,
+                    closes,
+                    from,
+                },
+                Err(err) => {
+                    println!(
+                        "There was an API error \"{}\" while fetching data for the symbol \"{}\"; skipping the symbol.",
+                        err, symbol
+                    );
+                    SymbolClosesMsg {
+                        symbol,
+                        closes: vec![],
+                        from,
+                    }
+                }
+            };
+
+            // Spawn another Actor and send it the message.
+            let proc_writer_address = ProcessorWriterActor.start();
+            let _ = proc_writer_address
+                .send(msg)
                 .await
-                .unwrap_or_default();
-            closes
-            // Ok(closes)
-        })
+                .expect("Couldn't send a message.");
+        }
+        .into_actor(self)
+        .spawn(ctx);
     }
 }
 
 /// The [`SymbolClosesMsg`] message
 ///
-/// It contains a `symbol`, and a `Vec<yahoo::Quote>`. todo
+/// It contains a `symbol`, and a `Vec<f64>` with closing prices for that symbol.
+/// It contains a `symbol`, and a `Vec<yahoo::Quote>` for that symbol. todo
 ///
 /// There is no expected response.
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct SymbolClosesMsg {
-    pub closes: Vec<f64>,
-    // pub quotes: Vec<yahoo::Quote>,
     pub symbol: String,
+    pub closes: Vec<f64>,
     pub from: OffsetDateTime,
+    // pub quotes: Vec<yahoo::Quote>, // todo
 }
 
 pub struct ProcessorWriterActor;
@@ -79,8 +111,6 @@ impl Handler<SymbolClosesMsg> for ProcessorWriterActor {
 
     fn handle(&mut self, msg: SymbolClosesMsg, ctx: &mut Self::Context) -> Self::Result {
         let symbol = msg.symbol;
-        // let quotes = msg.quotes;
-
         let closes = msg.closes;
         let from = msg.from;
 
@@ -117,6 +147,7 @@ impl Handler<SymbolClosesMsg> for ProcessorWriterActor {
     }
 }
 
+// todo use this
 // /// The [`QuoteRequestMsg`] message
 // #[derive(Message)]
 // #[rtype(result = "Vec<Vec<f64>>")]
@@ -154,75 +185,76 @@ impl Handler<SymbolClosesMsg> for ProcessorWriterActor {
 //     }
 // }
 
-/// Retrieve data from a data source and extract the closing prices
+/// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
 ///
-/// Errors during download are mapped onto `io::Errors` as `InvalidData`.
+/// # Returns
+/// - Vector of closing prices in case of no error, or,
+/// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.1.0/yahoo_finance_api/enum.YahooError.html)
+///   in case of an error.
 async fn fetch_closing_data(
     symbol: &str,
-    beginning: OffsetDateTime,
-    end: OffsetDateTime,
+    from: OffsetDateTime,
+    to: OffsetDateTime,
     provider: &yahoo::YahooConnector,
-) -> std::io::Result<Vec<f64>> {
-    // let provider = yahoo::YahooConnector::new(); //
+) -> Result<Vec<f64>, yahoo::YahooError> {
+    let yresponse = provider.get_quote_history(symbol, from, to).await?;
+    let mut quotes = yresponse.quotes()?;
 
-    let response = provider
-        .get_quote_history(symbol, beginning, end)
-        .await
-        .map_err(|_| Error::from(ErrorKind::InvalidData))?;
-    // dbg!(&response);
-    let mut quotes = response
-        .quotes()
-        .map_err(|_| Error::from(ErrorKind::InvalidData))?;
     let mut result = vec![];
     if !quotes.is_empty() {
         quotes.sort_by_cached_key(|k| k.timestamp);
         result = quotes.iter().map(|q| q.adjclose).collect();
     }
-    // dbg!(&result);
+
     Ok(result)
 }
 
-/// Convenience function that chains together the entire processing chain
-///
-/// We don't need to return anything.
-pub async fn _handle_symbol_data(
-    // symbols: &[&str],
-    symbols: &[String],
-    beginning: OffsetDateTime,
-    end: OffsetDateTime,
-) {
-    let provider = yahoo::YahooConnector::new();
-
-    for symbol in symbols {
-        let closes = fetch_closing_data(symbol, beginning, end, &provider)
-            .await
-            .unwrap_or_default();
-
-        if !closes.is_empty() {
-            let min = MinPrice {};
-            let max = MaxPrice {};
-            let price_diff = PriceDifference {};
-            let n_window_sma = WindowedSMA {
-                window_size: WINDOW_SIZE,
-            };
-
-            let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
-            let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
-            let last_price = *closes.last().expect("Expected non-empty closes.");
-            let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
-            let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
-
-            // A simple way to output CSV data
-            println!(
-                "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'."),
-                symbol,
-                last_price,
-                pct_change * 100.0,
-                period_min,
-                period_max,
-                sma.last().unwrap_or(&0.0)
-            );
-        }
-    }
-}
+// todo consider this for chunks
+//
+//
+//
+//
+// /// Convenience function that chains together the entire processing chain
+// ///
+// /// We don't need to return anything.
+// pub async fn _handle_symbol_data(
+//     // symbols: &[&str],
+//     symbols: &[String],
+//     from: OffsetDateTime,
+//     to: OffsetDateTime,
+// ) {
+//     let provider = yahoo::YahooConnector::new();
+//
+//     for symbol in symbols {
+//         let closes = fetch_closing_data(symbol, from, to, &provider)
+//             .await
+//             .unwrap_or_default();
+//
+//         if !closes.is_empty() {
+//             let min = MinPrice {};
+//             let max = MaxPrice {};
+//             let price_diff = PriceDifference {};
+//             let n_window_sma = WindowedSMA {
+//                 window_size: WINDOW_SIZE,
+//             };
+//
+//             let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
+//             let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
+//             let last_price = *closes.last().expect("Expected non-empty closes.");
+//             let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
+//             let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
+//
+//             // A simple way to output CSV data
+//             println!(
+//                 "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+//                 OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'."),
+//                 symbol,
+//                 last_price,
+//                 pct_change * 100.0,
+//                 period_min,
+//                 period_max,
+//                 sma.last().unwrap_or(&0.0)
+//             );
+//         }
+//     }
+// }

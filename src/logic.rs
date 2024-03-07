@@ -8,7 +8,7 @@ use async_std::stream;
 use clap::Parser;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{FetchActor, ProcessorWriterActor, QuoteRequestMsg, SymbolClosesMsg};
+use crate::actors::{FetchActor, QuoteRequestMsg};
 use crate::cli::Args;
 use crate::constants::{CSV_HEADER, TICK_INTERVAL_SECS};
 
@@ -24,7 +24,7 @@ use crate::constants::{CSV_HEADER, TICK_INTERVAL_SECS};
 /// which may be needed to keep the strict schedule with an async
 /// stream (that ticks every [`TICK_INTERVAL_SECS`] seconds), without
 /// having to manage threads or data structures to retrieve results.
-pub async fn main_loop() -> std::io::Result<()> {
+pub async fn main_loop() -> Result<(), actix::MailboxError> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
@@ -43,8 +43,9 @@ pub async fn main_loop() -> std::io::Result<()> {
     // // let symbols: Vec<&str> = args.symbols.split(",").collect();
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
+    // TODO: Spawn multiple `FetchActor`s. Perhaps move down into loop, or see another way - with ctx maybe?
     let fetch_address = FetchActor.start();
-    let proc_writer_address = ProcessorWriterActor.start();
+    // let proc_writer_address = ProcessorWriterActor.start();
     // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work (because of async handler).
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
@@ -63,26 +64,17 @@ pub async fn main_loop() -> std::io::Result<()> {
 
         // NEW WITH ACTORS
 
-        // Without rayon.
-
-        // Slow; sequential.
+        // Without rayon. 2.7 s
         for symbol in symbols.clone() {
+            // let fetch_address = FetchActor.start(); //
             let symbol = symbol.to_string();
-            let fetch_result = fetch_address
+            let _ = fetch_address
                 .send(QuoteRequestMsg {
                     symbol: symbol.clone(),
                     from,
                     to,
                 })
-                .await;
-            // dbg!(&fetch_result);
-            let _ = proc_writer_address
-                .send(SymbolClosesMsg {
-                    closes: fetch_result.unwrap(),
-                    symbol,
-                    from,
-                })
-                .await; // todo: move out of the loop?
+                .await?;
         }
 
         // // With rayon.
