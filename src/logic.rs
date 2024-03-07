@@ -65,7 +65,7 @@ pub async fn main_loop() -> std::io::Result<()> {
 
         // Without rayon.
 
-        // Slow.
+        // Slow; sequential.
         for symbol in symbols.clone() {
             let symbol = symbol.to_string();
             let fetch_result = fetch_address

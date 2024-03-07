@@ -42,10 +42,10 @@ impl Handler<QuoteRequestMsg> for FetchActor {
         let from = msg.from;
         let to = msg.to;
 
-        // let provider = yahoo::YahooConnector::new();
+        let provider = yahoo::YahooConnector::new();
 
         Box::pin(async move {
-            let closes = fetch_closing_data(&symbol, from, to) //, &provider)
+            let closes = fetch_closing_data(&symbol, from, to, &provider)
                 .await
                 .unwrap_or_default();
             closes
@@ -161,9 +161,9 @@ async fn fetch_closing_data(
     symbol: &str,
     beginning: OffsetDateTime,
     end: OffsetDateTime,
-    // provider: &yahoo::YahooConnector,
+    provider: &yahoo::YahooConnector,
 ) -> std::io::Result<Vec<f64>> {
-    let provider = yahoo::YahooConnector::new(); //
+    // let provider = yahoo::YahooConnector::new(); //
 
     let response = provider
         .get_quote_history(symbol, beginning, end)
@@ -191,10 +191,10 @@ pub async fn _handle_symbol_data(
     beginning: OffsetDateTime,
     end: OffsetDateTime,
 ) {
-    let _provider = yahoo::YahooConnector::new();
+    let provider = yahoo::YahooConnector::new();
 
     for symbol in symbols {
-        let closes = fetch_closing_data(symbol, beginning, end) //, &provider)
+        let closes = fetch_closing_data(symbol, beginning, end, &provider)
             .await
             .unwrap_or_default();
 
