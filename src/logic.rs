@@ -6,6 +6,7 @@ use actix_rt::System;
 use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
+use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::actors::{FetchActor, QuoteRequestMsg};
@@ -64,36 +65,42 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // NEW WITH ACTORS
 
-        // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
+        // // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
+        //
+        // // We start multiple `FetchActor`s - one per symbol, and they will
+        // // start the next Actor in the process - one each.
+        // for symbol in symbols.clone() {
+        //     let fetch_address = FetchActor.start();
+        //
+        //     let _ = fetch_address
+        //         .send(QuoteRequestMsg {
+        //             symbol: symbol.to_string().clone(),
+        //             from,
+        //             to,
+        //         })
+        //         .await?;
+        // }
+
+        // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
+        // It is not much faster (if at all) than the above solution without rayon.
+        // Namely, execution time is not measured properly in this case.
 
         // We start multiple `FetchActor`s - one per symbol, and they will
         // start the next Actor in the process - one each.
-        for symbol in symbols.clone() {
-            let fetch_address = FetchActor.start();
-
-            let _ = fetch_address
-                .send(QuoteRequestMsg {
-                    symbol: symbol.to_string().clone(),
-                    from,
-                    to,
-                })
-                .await?;
-        }
-
-        // // With rayon.
-        // let queries: Vec<_> = symbols
-        //     .par_iter()
-        //     .map(|symbol| async {
-        //         fetch_address
-        //             .send(QuoteRequestMsg {
-        //                 symbol: symbol.to_string(),
-        //                 from,
-        //                 to,
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
+        let queries: Vec<_> = symbols
+            .par_iter()
+            .map(|symbol| async {
+                FetchActor
+                    .start()
+                    .send(QuoteRequestMsg {
+                        symbol: symbol.to_string(),
+                        from,
+                        to,
+                    })
+                    .await
+            })
+            .collect();
+        let _ = futures::future::join_all(queries).await;
 
         // OLD WITH ACTORS
 
