@@ -65,6 +65,9 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         // NEW WITH ACTORS
 
         // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
+
+        // We start multiple `FetchActor`s - one per symbol, and they will
+        // start the next Actor in the process - one each.
         for symbol in symbols.clone() {
             let fetch_address = FetchActor.start();
 
