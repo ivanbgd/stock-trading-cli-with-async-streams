@@ -121,19 +121,39 @@ pricing data and calculate key financial metrics in real time.
     - We need to fetch data for around 500 symbols and the function `get_quote_history()` fetches data for one symbol
       (called "ticker") at a time. It is asynchronous, but perhaps this is the best that we can do.
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
-    - This can be a fast solution for this problem, even with one type of actor that performs all three operations (
-      fetch, process, write), but it depends on implementation a lot.
+    - This can be a fast solution for this problem, even with one type of actor that performs all three operations
+      (fetch, process, write), but it depends on implementation a lot.
     - Having only one Actor doesn't make sense, but we started with one with the intention to improve from there.
-    - It was on the order of synchronous and single-threaded `async` code, i.e., `~80-90` seconds, when actors were
-      processing one symbol at a time (when a request message contained only one symbol to process). This applies in
-      case of the `actix` crate with a single `MultiActor` that does all three operations, and in case of three actors
-      when using the `xactor` crate.
-    - When we increased the chunk size to 128, the `MultiActor` performance with `actix` improved a lot, enough for it
-      to fit in the 30-second window.
-    - Interestingly, reducing the chunk size back to 1 now, in this implementation, was able to put the complete
-      execution in a 5-second slot, possibly in even less than `3` s.
-    - Making chunk size equal 5 or 10 reduced execution time to `1.5-2` s.
-    - Two Actors...
+    - We initially kept the code asynchronous.
+        - It was on the order of synchronous and single-threaded `async` code, i.e., `~80-90` seconds, when actors were
+          processing one symbol at a time (when a request message contained only one symbol to process). This applies in
+          case of the `actix` crate with a single `MultiActor` that does all three operations., and in case of three
+          actors when using the `xactor` crate.
+        - When we increased the chunk size to 128, the `MultiActor` performance with `actix` improved a lot, enough for
+          it to fit in the 30-second window.
+        - Interestingly, reducing the chunk size back to 1 now, in this implementation, was able to put the complete
+          execution in a 5-second slot, possibly in even less than `3` s.
+        - Making chunk size equal 5 or 10 reduced execution time to `1.5-2` s.
+    - We then moved on to a Two-Actor asynchronous implementation.
+        - One actor was responsible for fetching data from the Yahoo! Finance API, and the other for processing
+          (calculating) performance indicators and printing them to `stdout`.
+        - We only implemented actors that process one symbol at a time, i.e., not in chunks.
+        - We tried with a single instance of the `FetchActor` and multiple instances of `ProcessorWriterActor`, as well
+          as with multiple instances of both types of Actor. The number of instances was equal to the number of symbols.
+            - In either case, `FetchActor` spawns `ProcessorWriterActor` and sends it messages with fetched data.
+            - The two cases have the same performance, which is around `2.5` s.
+        - We tried without and with `rayon`.
+            - Neither implementation is ordered, meaning output is not in the same order as input.
+            - The `rayon` implementation uses multiple instances of both types of Actor, and has the same performance as
+              the non-`rayon` implementation, i.e., `~2.5` s.
+    - The Three-Actor implementation has the `ProcessorWriterActor` split into two actors, for the total of three
+      actors.
+        - The `FetchActor` is responsible for fetching data from the Yahoo! Finance API.
+        - The `ProcessorActor` calculates performance indicators and prints them to `stdout`.
+        - The `WriterActor` writes the performance indicators to a `CSV` file.
+        - Performance...
+        - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
+          is slightly worse because of that.
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the
       Actix ecosystem".
 - The actors are connected to the outside world.

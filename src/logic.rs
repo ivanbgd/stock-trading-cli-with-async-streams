@@ -3,13 +3,12 @@ use std::time::{Duration, Instant};
 
 use actix::Actor;
 use actix_rt::System;
-use async_std::prelude::StreamExt;
 use async_std::stream;
 use clap::Parser;
-use rayon::prelude::*;
+// use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{FetchActor, QuoteRequestMsg};
+use crate::actors::{FetchActor, QuoteRequestMsg, WriterActor};
 use crate::cli::Args;
 use crate::constants::{CSV_HEADER, TICK_INTERVAL_SECS};
 
@@ -49,10 +48,26 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // let proc_writer_address = ProcessorWriterActor.start();
     // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work (because of async handler).
 
+    // We need to ensure that we have one and only one `WriterActor` - a singleton.
+    // This is because it writes to a file, and writing to a shared object,
+    // such as a file, needs to be synchronized, i.e., sequential.
+    // We generally don't use low-level synchronization primitives such as
+    // locks, mutexes, and similar when working with Actors.
+    // Actors have mailboxes and process messages that they receive one at a time,
+    // i.e., sequentially, and hence we can accomplish synchronization implicitly
+    // by using a single writer actor.
+    let writer_address = WriterActor {
+        file_name: "output.csv".to_string(),
+        writer: None,
+    }
+    .start();
+
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    while let Some(_) = interval.next().await {
-        // We always want a fresh period end time.
+    // while let Some(_) = interval.next().await { // TODO
+    // todo: remove the FOR
+    for _ in 0..3 {
+        // We always want a fresh period end time, which is "now" in the UTC time zone.
         let to = OffsetDateTime::now_utc();
 
         // For standard output only, i.e., not for CSV
@@ -65,42 +80,43 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // NEW WITH ACTORS
 
-        // // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
-        //
-        // // We start multiple `FetchActor`s - one per symbol, and they will
-        // // start the next Actor in the process - one each.
-        // for symbol in symbols.clone() {
-        //     let fetch_address = FetchActor.start();
-        //
-        //     let _ = fetch_address
-        //         .send(QuoteRequestMsg {
-        //             symbol: symbol.to_string().clone(),
-        //             from,
-        //             to,
-        //         })
-        //         .await?;
-        // }
-
-        // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
-        // It is not much faster (if at all) than the above solution without rayon.
-        // Namely, execution time is not measured properly in this case.
+        // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
 
         // We start multiple `FetchActor`s - one per symbol, and they will
         // start the next Actor in the process - one each.
-        let queries: Vec<_> = symbols
-            .par_iter()
-            .map(|symbol| async {
-                FetchActor
-                    .start()
-                    .send(QuoteRequestMsg {
-                        symbol: symbol.to_string(),
-                        from,
-                        to,
-                    })
-                    .await
-            })
-            .collect();
-        let _ = futures::future::join_all(queries).await;
+        for symbol in symbols.clone() {
+            let fetch_address = FetchActor.start();
+
+            let _ = fetch_address
+                .send(QuoteRequestMsg {
+                    symbol: symbol.to_string().clone(),
+                    from,
+                    to,
+                    writer_address: writer_address.clone(),
+                })
+                .await?;
+        }
+
+        // // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
+        // // It is not much faster (if at all) than the above solution without rayon.
+        // // Namely, execution time is not measured properly in this case.
+        //
+        // // We start multiple `FetchActor`s - one per symbol, and they will
+        // // start the next Actor in the process - one each.
+        // let queries: Vec<_> = symbols
+        //     .par_iter()
+        //     .map(|symbol| async {
+        //         FetchActor
+        //             .start()
+        //             .send(QuoteRequestMsg {
+        //                 symbol: symbol.to_string(),
+        //                 from,
+        //                 to,
+        //             })
+        //             .await
+        //     })
+        //     .collect();
+        // let _ = futures::future::join_all(queries).await;
 
         // OLD WITH ACTORS
 
