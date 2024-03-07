@@ -123,6 +123,7 @@ pricing data and calculate key financial metrics in real time.
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
     - This can be a fast solution for this problem, even with one type of actor that performs all three operations (
       fetch, process, write), but it depends on implementation a lot.
+    - Having only one Actor doesn't make sense, but we started with one with the intention to improve from there.
     - It was on the order of synchronous and single-threaded `async` code, i.e., `~80-90` seconds, when actors were
       processing one symbol at a time (when a request message contained only one symbol to process). This applies in
       case of the `actix` crate with a single `MultiActor` that does all three operations, and in case of three actors
@@ -130,8 +131,9 @@ pricing data and calculate key financial metrics in real time.
     - When we increased the chunk size to 128, the `MultiActor` performance with `actix` improved a lot, enough for it
       to fit in the 30-second window.
     - Interestingly, reducing the chunk size back to 1 now, in this implementation, was able to put the complete
-      execution in a 5-second slot, possibly even less than `3` s.
+      execution in a 5-second slot, possibly in even less than `3` s.
     - Making chunk size equal 5 or 10 reduced execution time to `1.5-2` s.
+    - Two Actors...
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the
       Actix ecosystem".
 - The actors are connected to the outside world.
