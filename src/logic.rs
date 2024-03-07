@@ -44,7 +44,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
 
     // TODO: Spawn multiple `FetchActor`s. Perhaps move down into loop, or see another way - with ctx maybe?
-    let fetch_address = FetchActor.start();
+    // let fetch_address = FetchActor.start();
     // let proc_writer_address = ProcessorWriterActor.start();
     // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work (because of async handler).
 
@@ -64,13 +64,13 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // NEW WITH ACTORS
 
-        // Without rayon. 2.7 s
+        // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
         for symbol in symbols.clone() {
-            // let fetch_address = FetchActor.start(); //
-            let symbol = symbol.to_string();
+            let fetch_address = FetchActor.start();
+
             let _ = fetch_address
                 .send(QuoteRequestMsg {
-                    symbol: symbol.clone(),
+                    symbol: symbol.to_string().clone(),
                     from,
                     to,
                 })
