@@ -102,6 +102,9 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
                     writer_address: writer_address.clone(),
                 })
                 .await?;
+
+            // TODO: We should block here, somehow, for the writer to have time to write everything.
+            // todo: its async handler won't even compile, currently, but non-async is not fully-correct
         }
 
         // // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
