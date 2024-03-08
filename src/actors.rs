@@ -8,6 +8,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
+// use crate::constants::{CSV_HEADER, WINDOW_SIZE}; todo
 use crate::constants::{CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
@@ -85,7 +86,7 @@ impl Handler<QuoteRequestMsg> for FetchActor {
             let _ = proc_address
                 .send(closes_msg)
                 .await
-                .expect("Couldn't send a message to the processor actor.");
+                .expect("Couldn't send a message to the ProcessorActor.");
         }
         .into_actor(self)
         .spawn(ctx);
@@ -169,7 +170,7 @@ impl Handler<SymbolClosesMsg> for ProcessorActor {
                 let _ = writer_address
                     .send(perf_ind_msg)
                     .await
-                    .expect("Couldn't send a message to the writer actor.");
+                    .expect("Couldn't send a message to the WriterActor.");
 
                 // A simple way to output CSV data
                 println!(
@@ -216,7 +217,7 @@ impl Actor for WriterActor {
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
-        println!("WriterActor is started."); //todo remove
+        println!("WriterActor is started.");
     }
 
     fn stopped(&mut self, ctx: &mut Self::Context) {
@@ -226,7 +227,7 @@ impl Actor for WriterActor {
                 .expect("Failed to flush writer. Data loss :(")
         };
         ctx.stop();
-        println!("WriterActor is stopped."); //todo remove
+        println!("WriterActor is flushed and properly stopped.");
     }
 }
 
@@ -235,20 +236,25 @@ impl Handler<PerformanceIndicatorsMsg> for WriterActor {
     type Result = ();
 
     fn handle(&mut self, msg: PerformanceIndicatorsMsg, ctx: &mut Self::Context) -> Self::Result {
-        // todo: async?
-        if let Some(file) = &mut self.writer {
-            let _ = writeln!(
-                file,
-                "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                msg.from,
-                msg.symbol,
-                msg.last_price,
-                msg.pct_change,
-                msg.period_min,
-                msg.period_max,
-                msg.sma,
-            );
+        // let mut writer = &self.writer;
+
+        async move {
+            if let Some(file) = &mut self.writer {
+                let _ = writeln!(
+                    file,
+                    "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+                    msg.from,
+                    msg.symbol,
+                    msg.last_price,
+                    msg.pct_change,
+                    msg.period_min,
+                    msg.period_max,
+                    msg.sma,
+                );
+            }
         }
+        .into_actor(self)
+        .spawn(ctx);
     }
 }
 

@@ -48,6 +48,13 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // let proc_writer_address = ProcessorWriterActor.start();
     // let actor_address = SyncArbiter::start(NUM_THREADS, || MultiActor); // Doesn't work (because of async handler).
 
+    // let file_name = "output.csv".to_string();
+    // let mut file = File::create(&file_name)
+    //     .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", file_name));
+    // let _ = writeln!(&mut file, "{}", CSV_HEADER);
+    // let writer = Some(BufWriter::new(file));
+    // println!("WriterActor is started.");
+
     // We need to ensure that we have one and only one `WriterActor` - a singleton.
     // This is because it writes to a file, and writing to a shared object,
     // such as a file, needs to be synchronized, i.e., sequential.
@@ -64,8 +71,8 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // while let Some(_) = interval.next().await { // TODO
-    // todo: remove the FOR
+    // while let Some(_) = interval.next().await { // TODO: uncomment
+    // todo: remove the FOR line
     for _ in 0..3 {
         // We always want a fresh period end time, which is "now" in the UTC time zone.
         let to = OffsetDateTime::now_utc();
