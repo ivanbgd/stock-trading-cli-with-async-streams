@@ -238,23 +238,23 @@ impl Handler<PerformanceIndicatorsMsg> for WriterActor {
     fn handle(&mut self, msg: PerformanceIndicatorsMsg, ctx: &mut Self::Context) -> Self::Result {
         // let mut writer = &self.writer;
 
-        async move {
-            if let Some(file) = &mut self.writer {
-                let _ = writeln!(
-                    file,
-                    "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                    msg.from,
-                    msg.symbol,
-                    msg.last_price,
-                    msg.pct_change,
-                    msg.period_min,
-                    msg.period_max,
-                    msg.sma,
-                );
-            }
+        // async move {
+        if let Some(file) = &mut self.writer {
+            let _ = writeln!(
+                file,
+                "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+                msg.from,
+                msg.symbol,
+                msg.last_price,
+                msg.pct_change,
+                msg.period_min,
+                msg.period_max,
+                msg.sma,
+            );
         }
-        .into_actor(self)
-        .spawn(ctx);
+        // }
+        // .into_actor(self)
+        // .spawn(ctx);
     }
 }
 

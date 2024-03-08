@@ -5,7 +5,7 @@ use actix::Actor;
 use actix_rt::System;
 use async_std::stream;
 use clap::Parser;
-// use rayon::prelude::*;
+use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::actors::{FetchActor, QuoteRequestMsg, WriterActor};
@@ -89,45 +89,45 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
 
-        // We start multiple `FetchActor`s - one per symbol, and they will
-        // start the next Actor in the process - one each.
-        for symbol in symbols.clone() {
-            let fetch_address = FetchActor.start();
-
-            let _ = fetch_address
-                .send(QuoteRequestMsg {
-                    symbol: symbol.to_string().clone(),
-                    from,
-                    to,
-                    writer_address: writer_address.clone(),
-                })
-                .await?;
-
-            // TODO: We should block here, somehow, for the writer to have time to write everything.
-            // todo: its async handler won't even compile, currently, but non-async is not fully-correct
-            // todo: or, it is fully correct, but I need to block
-        }
-
-        // // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
-        // // It is not much faster (if at all) than the above solution without rayon.
-        // // Namely, execution time is not measured properly in this case.
-        //
         // // We start multiple `FetchActor`s - one per symbol, and they will
         // // start the next Actor in the process - one each.
-        // let queries: Vec<_> = symbols
-        //     .par_iter()
-        //     .map(|symbol| async {
-        //         FetchActor
-        //             .start()
-        //             .send(QuoteRequestMsg {
-        //                 symbol: symbol.to_string(),
-        //                 from,
-        //                 to,
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
+        // for symbol in symbols.clone() {
+        //     let fetch_address = FetchActor.start();
+        //
+        //     let _ = fetch_address
+        //         .send(QuoteRequestMsg {
+        //             symbol: symbol.to_string().clone(),
+        //             from,
+        //             to,
+        //             writer_address: writer_address.clone(),
+        //         })
+        //         .await?;
+        // }
+        // // TODO: We should block here, somehow, for the writer to have time to write everything.
+        // // todo: its async handler won't even compile, currently, but non-async is not fully-correct
+        // // todo: or, it is fully correct, but I need to block
+
+        // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
+        // It is not much faster (if at all) than the above solution without rayon.
+        // Namely, execution time is not measured properly in this case.
+
+        // We start multiple `FetchActor`s - one per symbol, and they will
+        // start the next Actor in the process - one each.
+        let queries: Vec<_> = symbols
+            .par_iter()
+            .map(|symbol| async {
+                FetchActor
+                    .start()
+                    .send(QuoteRequestMsg {
+                        symbol: symbol.to_string(),
+                        from,
+                        to,
+                        writer_address: writer_address.clone(),
+                    })
+                    .await
+            })
+            .collect();
+        let _ = futures::future::join_all(queries).await;
 
         // OLD WITH ACTORS
 
