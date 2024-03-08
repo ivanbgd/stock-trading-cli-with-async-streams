@@ -112,9 +112,9 @@ pricing data and calculate key financial metrics in real time.
 - Wrapping `symbols` in `std::sync::Arc` and using `std::thread::scope` provides a working solution that is almost as
   fast as other fast multithreading solutions.
 - A higher CPU utilization can be observed with chunk size of 5 than with chunk size of 128, for example, which is good.
-- All measurements were performed with 501 S&P symbols provided.
-    - Comments in code also assume all 501 symbols.
-- If only 10 symbols are provided, instead of 501, then the fastest solution is with chunk size of 1, around `250` ms.
+- All measurements were performed with 503 S&P symbols provided.
+    - Comments in code also assume all 503 symbols.
+- If only 10 symbols are provided, instead of 503, then the fastest solution is with chunk size of 1, around `250` ms.
     - Chunk size of 5 is slower, around `600` ms.
     - Chunk sizes of 10 or 128 are very slow, over `1` s!
 - We are probably limited by the data-fetching time from the Yahoo! Finance API. That's probably our bottleneck.
@@ -174,8 +174,7 @@ Most of those were provided by the course author, but were modified where it mad
     - https://github.com/datasets/s-and-p-500-companies/blob/main/data/constituents.csv
     - https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
 - The alphabetically-sorted list is provided in [sp500_feb_2024.csv](sp500_feb_2024.csv).
-    - Symbols "BF.B" and "BRK.B" are removed from the list.
-    - There are 501 symbols in it.
+    - There are 503 symbols in it.
 - The output is not in the same order as input because of concurrent execution of futures.
 
 ## The Most Notable Crates Used
