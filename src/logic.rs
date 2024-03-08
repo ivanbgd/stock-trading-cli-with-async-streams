@@ -1,14 +1,15 @@
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use actix::Actor;
+// use actix::Actor;
+use actix::{Actor, SyncArbiter};
 use actix_rt::System;
-use async_std::stream;
 use clap::Parser;
 // use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::actors::{FetchActor, QuoteRequestMsg, WriterActor};
+// use crate::actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
 use crate::constants::{CSV_HEADER, TICK_INTERVAL_SECS};
 
@@ -63,15 +64,25 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // Actors have mailboxes and process messages that they receive one at a time,
     // i.e., sequentially, and hence we can accomplish synchronization implicitly
     // by using a single writer actor.
-    let writer_address = WriterActor {
+    // let writer_address = WriterActor {
+    //     file_name: "output.csv".to_string(),
+    //     writer: None,
+    // }
+    // .start();
+
+    // More than one thread is certainly incorrect, but even with only one thread
+    // not everything gets written to the file, so we can't consider that correct either.
+    // In fact, not all symbols get printed to stdout, but more do than to the file.
+    // This solution is asynchronous (async/await), so that could be the culprit.
+    let writer_address = SyncArbiter::start(2, || WriterActor {
         file_name: "output.csv".to_string(),
         writer: None,
-    }
-    .start();
+    });
 
-    let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+    // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // while let Some(_) = interval.next().await { // TODO: uncomment
+    // while let Some(_) = interval.next().await {
+    // TODO: uncomment
     // todo: remove the FOR line
     for _ in 0..1 {
         // We always want a fresh period end time, which is "now" in the UTC time zone.
@@ -87,7 +98,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // NEW WITH ACTORS
 
-        // Without rayon. Not sequential. Multiple `FetchActor`s. 2.6 s
+        // Without rayon. Not sequential. Multiple `FetchActor`s. 2.3 s
 
         // We start multiple `FetchActor`s - one per symbol, and they will
         // start the next Actor in the process - one each.
@@ -103,6 +114,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
                 })
                 .await?;
         }
+
         // TODO: We should block here, somehow, for the writer to have time to write everything.
         // todo: its async handler won't even compile, currently, but non-async is not fully-correct
         // todo: or, it is fully correct, but I need to block

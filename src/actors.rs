@@ -1,9 +1,7 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use actix::{
-    Actor, ActorContext, Addr, Context, ContextFutureSpawner, Handler, Message, WrapFuture,
-};
+use actix::{Actor, ActorContext, Addr, Context, ContextFutureSpawner, Handler, Message, SyncContext, WrapFuture};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -210,7 +208,8 @@ pub struct WriterActor {
 }
 
 impl Actor for WriterActor {
-    type Context = Context<Self>;
+    // type Context = Context<Self>;
+    type Context = SyncContext<Self>;
 
     fn started(&mut self, _ctx: &mut Self::Context) {
         let mut file = File::create(&self.file_name)
@@ -328,7 +327,7 @@ async fn fetch_closing_data(
 // /// Convenience function that chains together the entire processing chain
 // ///
 // /// We don't need to return anything.
-// pub async fn _handle_symbol_data(
+// pub async fn handle_symbol_data(
 //     // symbols: &[&str],
 //     symbols: &[String],
 //     from: OffsetDateTime,
