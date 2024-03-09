@@ -1,9 +1,11 @@
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-// use actix::Actor;
-use actix::{Actor, SyncArbiter};
+use actix::Actor;
+// use actix::{Actor, SyncArbiter};
 use actix_rt::System;
+// use async_std::stream::{self, StreamExt};
+use async_std::stream::{self, StreamExt};
 use clap::Parser;
 // use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
@@ -11,7 +13,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use crate::actors::{FetchActor, QuoteRequestMsg, WriterActor};
 // use crate::actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
-use crate::constants::{CSV_HEADER, TICK_INTERVAL_SECS};
+use crate::constants::{BARRIER_SECONDS, CSV_HEADER, TICK_INTERVAL_SECS};
 
 /// **The main loop**
 ///
@@ -64,27 +66,29 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // Actors have mailboxes and process messages that they receive one at a time,
     // i.e., sequentially, and hence we can accomplish synchronization implicitly
     // by using a single writer actor.
-    // let writer_address = WriterActor {
-    //     file_name: "output.csv".to_string(),
-    //     writer: None,
-    // }
-    // .start();
-
-    // More than one thread is certainly incorrect, but even with only one thread
-    // not everything gets written to the file, so we can't consider that correct either.
-    // In fact, not all symbols get printed to stdout, but more do than to the file.
-    // This solution is asynchronous (async/await), so that could be the culprit.
-    let writer_address = SyncArbiter::start(2, || WriterActor {
+    let writer_address = WriterActor {
         file_name: "output.csv".to_string(),
         writer: None,
-    });
+    }
+    .start();
 
-    // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+    // // More than one thread is certainly incorrect, but even with only one thread
+    // // not everything gets written to the file, so we can't consider that correct either.
+    // // Not all symbols are written, but even some rows are not complete.
+    // // In fact, not all symbols get printed to stdout, but more do than to the file.
+    // // With stdout at least all rows are complete, but they are printed in a different actor.
+    // // This solution is asynchronous (async/await), so that could be the culprit.
+    // let writer_address = SyncArbiter::start(1, || WriterActor {
+    //     file_name: "output.csv".to_string(),
+    //     writer: None,
+    // });
 
-    // while let Some(_) = interval.next().await {
-    // TODO: uncomment
-    // todo: remove the FOR line
-    for _ in 0..1 {
+    let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+
+    while let Some(_) = interval.next().await {
+        // TODO: uncomment
+        // todo: remove the FOR line
+        // for _ in 0..1 {
         // We always want a fresh period end time, which is "now" in the UTC time zone.
         let to = OffsetDateTime::now_utc();
 
@@ -115,9 +119,21 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
                 .await?;
         }
 
-        // TODO: We should block here, somehow, for the writer to have time to write everything.
-        // todo: its async handler won't even compile, currently, but non-async is not fully-correct
-        // todo: or, it is fully correct, but I need to block
+        println!("\n\t 1) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
+
+        // We block here to give the writer actor enough time to write everything in the file.
+        // We need a kind of barrier.
+        // This is not a problem, and doesn't slow our program down, because the barrier
+        // time is much shorter than the interval time for downloading and processing data.
+        // Both variants work the same, but since "Actix" is based on "Tokio" and not on "async_std",
+        // it makes more sense to use the "Tokio" variant.
+        // Unfortunately, neither works fully. Namely, not all rows get written out into the file.
+        // Rows might not even get fully-written.
+        // Does this barrier really help?
+        // async_std::task::sleep(Duration::from_secs(BARRIER_SECONDS)).await;
+        tokio::time::sleep(Duration::from_secs(BARRIER_SECONDS)).await;
+
+        println!("\n\t 2) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
 
         // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
         // It is not much faster (if at all) than the above solution without rayon.
