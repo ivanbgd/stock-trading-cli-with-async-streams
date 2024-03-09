@@ -180,12 +180,25 @@ pricing data and calculate key financial metrics in real time.
         - We worked with chunk size equal 5.
         - There are as many `FetchActor`s and `ProcessorActor`s as there are chunks.
             - The execution time was possibly below `2` seconds.
-        - If the `WriterActor` also works with chunks (of the same size)... TODO
+        - If the `WriterActor` also works with chunks (of the same size and with the same amount of them), the execution
+          time is again below `2` seconds, but possibly even shorter than in the previous case, i.e., around `1.5` s.
+            - This includes flushing of the buffer to file with every chunk, which makes it possible to write all rows
+              to the file, and to still get an even better performance in terms of execution speed.
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
-    - With async code it was not possible to have the `WriterActor` write out all rows, i.e., performance
-      indicators for all symbols, in the file.
-        - This includes the course-author's `xactor`-based solution.
+    - With async code it was not possible to have the `WriterActor` write out all 503 rows, i.e., performance
+      indicators for all symbols, in the file, if we only flushed when stopping the actor, i.e., in its `stopped`
+      method.
+        - Namely, we stop the main loop, which is infinite, by interrupting program by pressing `CTRL+C`, so
+          the `stopped` method doesn't have a chance to get executed and flush the buffer.
+        - Increasing the `WriterActor`'s mailbox size didn't help.
+        - The course-author's `xactor`-based solution also wasn't able to write all rows to the file, but they only
+          flush the buffer in the actor's `stopped` method.
+    - By adding flushing of the buffer to the file in the `WriterActor`'s `handle` method, we are able to solve this
+      issue.
+        - We do this in case the `WriterActor` also works with *chunks*.
+    - All 503 rows do get printed to `stdout` regardless of the `WriterActor`, as the output to console is handled by
+      the `ProcessorActor`.
 - We are using [actix](https://crates.io/crates/actix) as an Actor framework for Rust, and
   its [actix-rt](https://crates.io/crates/actix-rt) as a runtime.
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the

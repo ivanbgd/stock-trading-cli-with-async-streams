@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
 // use crate::constants::{CSV_HEADER, WINDOW_SIZE}; todo remove
-use crate::constants::{CHUNK_SIZE, CSV_HEADER, WINDOW_SIZE};
+use crate::constants::{CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
 /// The [`QuoteRequestsMsg`] message
@@ -60,7 +60,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
         let provider = yahoo::YahooConnector::new();
 
-        let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(CHUNK_SIZE);
+        let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
 
         async move {
             for symbol in symbols {
@@ -122,14 +122,18 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
 
     /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
     ///
-    /// Sends a [`PerformanceIndicatorsMsg`] message to the [`WriterActor`],
+    /// Sends a [`PerformanceIndicatorsRowsMsg`] message to the [`WriterActor`],
     /// whose address it gets from the [`SymbolsClosesMsg`] message.
     fn handle(&mut self, msg: SymbolsClosesMsg, ctx: &mut Self::Context) -> Self::Result {
         let symbols_closes = msg.symbols_closes;
         let from = msg.from;
         let writer_address = msg.writer_address;
 
+        let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
+
         async move {
+            let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
+
             for symbol_closes in symbols_closes {
                 let symbol = symbol_closes.0;
                 let closes = symbol_closes.1;
@@ -142,8 +146,6 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
                         window_size: WINDOW_SIZE,
                     };
 
-                    let from =
-                        OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
                     let last_price = *closes.last().expect("Expected non-empty closes.");
                     let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
                     let pct_change = pct_change * 100.0;
@@ -152,8 +154,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
                     let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
                     let sma = *sma.last().unwrap_or(&0.0);
 
-                    let perf_ind_msg = PerformanceIndicatorsMsg {
-                        from: from.clone(),
+                    let row = PerformanceIndicatorsRow {
                         symbol: symbol.clone(),
                         last_price,
                         pct_change,
@@ -162,18 +163,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
                         sma,
                     };
 
-                    // // Spawn another Actor and send it the message.
-                    // let writer_address = WriterActor {
-                    //     file_name: "output.csv".to_string(),
-                    //     writer: None,
-                    // }
-                    // .start(); todo remove
-
-                    // Send the message to the single writer actor.
-                    let _ = writer_address
-                        .send(perf_ind_msg)
-                        .await
-                        .expect("Couldn't send a message to the WriterActor.");
+                    rows.push(row);
 
                     // A simple way to output CSV data
                     println!(
@@ -184,27 +174,41 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
                     eprintln!("Got no data for the symbol \"{}\".", symbol);
                 }
             }
+
+            let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
+
+            // Send the message to the single writer actor.
+            let _ = writer_address
+                .send(perf_ind_msg)
+                .await
+                .expect("Couldn't send a message to the WriterActor.");
         }
         .into_actor(self)
         .spawn(ctx);
     }
 }
 
-/// The [`PerformanceIndicatorsMsg`] message
-///
-/// It contains a `symbol` and calculated performance indicators for that symbol.
-///
-/// There is no expected response.
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct PerformanceIndicatorsMsg {
-    pub from: String,
+/// A single row of calculated performance indicators for a symbol
+pub struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
     pub pct_change: f64,
     pub period_min: f64,
     pub period_max: f64,
     pub sma: f64,
+}
+
+/// The [`PerformanceIndicatorsRowsMsg`] message
+///
+/// It contains a `from` date and time field,
+/// and calculated performance indicators for a chunk of symbols.
+///
+/// There is no expected response.
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct PerformanceIndicatorsRowsMsg {
+    pub from: String,
+    pub rows: Vec<PerformanceIndicatorsRow>,
 }
 
 /// Actor for writing calculated performance indicators for fetched stock data into a CSV file
@@ -217,7 +221,8 @@ impl Actor for WriterActor {
     type Context = Context<Self>;
     // type Context = SyncContext<Self>; todo remove
 
-    fn started(&mut self, _ctx: &mut Self::Context) {
+    fn started(&mut self, ctx: &mut Self::Context) {
+        ctx.set_mailbox_capacity(16); // Default capacity is 16 messages.
         let mut file = File::create(&self.file_name)
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
@@ -236,23 +241,34 @@ impl Actor for WriterActor {
     }
 }
 
-/// The [`PerformanceIndicatorsMsg`] message handler for the [`WriterActor`] actor
-impl Handler<PerformanceIndicatorsMsg> for WriterActor {
+/// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
+impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
     type Result = ();
 
-    fn handle(&mut self, msg: PerformanceIndicatorsMsg, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(
+        &mut self,
+        msg: PerformanceIndicatorsRowsMsg,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
+        let from = msg.from;
+        let rows = msg.rows;
+
         if let Some(file) = &mut self.writer {
-            let _ = writeln!(
-                file,
-                "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                msg.from,
-                msg.symbol,
-                msg.last_price,
-                msg.pct_change,
-                msg.period_min,
-                msg.period_max,
-                msg.sma,
-            );
+            for row in rows {
+                let _ = writeln!(
+                    file,
+                    "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+                    from,
+                    row.symbol,
+                    row.last_price,
+                    row.pct_change,
+                    row.period_min,
+                    row.period_max,
+                    row.sma,
+                );
+            }
+
+            file.flush().expect("Failed to flush to file. Data loss :/");
         }
     }
 }
