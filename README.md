@@ -184,6 +184,11 @@ pricing data and calculate key financial metrics in real time.
           time is again below `2` seconds, but possibly even shorter than in the previous case, i.e., around `1.5` s.
             - This includes flushing of the buffer to file with every chunk, which makes it possible to write all rows
               to the file, and to still get an even better performance in terms of execution speed.
+            - We are using `std::io::BufWriter` to improve the write performance. It wouldn't make sense to flush the
+              buffer unless we work with chunks of symbols, i.e., it wouldn't make sense to flush it for a single
+              symbol, although, that would make the solution correct because it would write all rows to the file. Still,
+              to have both good performance and a correct solution, we should use chunks and flush the buffer for every
+              chunk.
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
     - With async code it was not possible to have the `WriterActor` write out all 503 rows, i.e., performance
