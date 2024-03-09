@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
@@ -8,25 +9,41 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
-// use crate::constants::{CSV_HEADER, WINDOW_SIZE}; todo
-use crate::constants::{CSV_HEADER, WINDOW_SIZE};
+// use crate::constants::{CSV_HEADER, WINDOW_SIZE}; todo remove
+use crate::constants::{CHUNK_SIZE, CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
-/// The [`QuoteRequestMsg`] message
+/// The [`QuoteRequestsMsg`] message
 ///
-/// It contains a `symbol`, and `from` and `to` fields.
+/// It contains a `chunk` of symbols, and `from` and `to` fields.
 ///
 /// It also contains a [`WriterActor`] address.
 ///
 /// There is no expected response.
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct QuoteRequestMsg {
-    pub symbol: String,
+pub struct QuoteRequestsMsg {
+    pub chunk: Vec<String>,
     pub from: OffsetDateTime,
     pub to: OffsetDateTime,
     pub writer_address: Addr<WriterActor>,
 }
+
+// /// The [`QuoteRequestMsg`] message
+// ///
+// /// It contains a `symbol`, and `from` and `to` fields.
+// ///
+// /// It also contains a [`WriterActor`] address.
+// ///
+// /// There is no expected response.
+// #[derive(Message)]
+// #[rtype(result = "()")]
+// pub struct QuoteRequestMsg {
+//     pub symbol: String,
+//     pub from: OffsetDateTime,
+//     pub to: OffsetDateTime,
+//     pub writer_address: Addr<WriterActor>,
+// }
 
 /// Actor that downloads stock data for a specified symbol and period
 ///
@@ -37,54 +54,81 @@ impl Actor for FetchActor {
     type Context = Context<Self>;
 }
 
-/// The [`QuoteRequestMsg`] message handler for the [`FetchActor`] actor
-impl Handler<QuoteRequestMsg> for FetchActor {
+// /// The [`QuoteRequestMsg`] message handler for the [`FetchActor`] actor
+// impl Handler<QuoteRequestMsg> for FetchActor {
+//     type Result = ();
+//
+//     fn handle(&mut self, msg: QuoteRequestMsg, ctx: &mut Self::Context) -> Self::Result {
+//         let symbols = msg.chunk;
+//         let from = msg.from;
+//         let to = msg.to;
+//
+//         let provider = yahoo::YahooConnector::new();
+//
+//         let mut result: Vec<Vec<f64>> = vec![];
+//
+//         async move {
+//             for symbol in symbols {
+//                 let closes = fetch_closing_data(&symbol, from, to, &provider)
+//                     .await
+//                     .unwrap_or_default();
+//                 result.push(closes);
+//             }
+//         }
+//         .into_actor(self)
+//         .spawn(ctx);
+//
+//         result
+//     }
+// } //
+
+/// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
+impl Handler<QuoteRequestsMsg> for FetchActor {
     type Result = ();
 
-    /// The [`QuoteRequestMsg`] message handler for the [`FetchActor`] actor
+    /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
     ///
-    /// Spawns a new [`ProcessorActor`] and sends it a [`SymbolClosesMsg`] message.
+    /// Spawns a new [`ProcessorActor`] and sends it a [`SymbolsClosesMsg`] message.
     ///
-    /// The message contains a `symbol` and a vector of closing prices in case there was no error
-    /// when fetching the data, or an empty vector in case of an error, in which case it prints
-    /// the error message to `stderr`.
+    /// The message contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol
+    /// in case there was no error when fetching the data, or an empty vector in case of an error,
+    /// in which case it prints the error message to `stderr`.
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
     /// we don't break the program but rather continue.
-    fn handle(&mut self, msg: QuoteRequestMsg, ctx: &mut Self::Context) -> Self::Result {
-        let symbol = msg.symbol;
+    fn handle(&mut self, msg: QuoteRequestsMsg, ctx: &mut Self::Context) -> Self::Result {
+        let symbols = msg.chunk;
         let from = msg.from;
         let to = msg.to;
         let writer_address = msg.writer_address;
 
         let provider = yahoo::YahooConnector::new();
 
+        let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(CHUNK_SIZE);
+
         async move {
-            let closes_msg = match fetch_closing_data(&symbol, from, to, &provider).await {
-                Ok(closes) => SymbolClosesMsg {
-                    symbol,
-                    closes,
-                    from,
-                    writer_address,
-                },
-                Err(err) => {
-                    println!(
-                        "There was an API error \"{}\" while fetching data for the symbol \"{}\"; skipping the symbol.",
-                        err, symbol
-                    );
-                    SymbolClosesMsg {
-                        symbol,
-                        closes: vec![],
-                        from,
-                        writer_address,
+            for symbol in symbols {
+                let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
+                    Ok(closes) => closes,
+                    Err(err) => {
+                        println!(
+                            "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
+                            skipping the symbol.",
+                            err, symbol
+                        );
+                        vec![]
                     }
-                }
-            };
+                };
+
+                symbols_closes.insert(symbol, closes);
+            }
+
+            let symbols_closes_msg = SymbolsClosesMsg { symbols_closes, from, writer_address };
 
             // Spawn another Actor and send it the message.
             let proc_address = ProcessorActor.start();
             let _ = proc_address
-                .send(closes_msg)
+                .send(symbols_closes_msg)
                 .await
                 .expect("Couldn't send a message to the ProcessorActor.");
         }
@@ -93,9 +137,9 @@ impl Handler<QuoteRequestMsg> for FetchActor {
     }
 }
 
-/// The [`SymbolClosesMsg`] message
+/// The [`SymbolsClosesMsg`] message
 ///
-/// It contains a `symbol`, a `Vec<f64>` with closing prices for that symbol,
+/// It contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol,
 /// and the starting date and time `from` field.
 ///
 /// It also contains a [`WriterActor`] address.
@@ -103,12 +147,28 @@ impl Handler<QuoteRequestMsg> for FetchActor {
 /// There is no expected response.
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct SymbolClosesMsg {
-    pub symbol: String,
-    pub closes: Vec<f64>,
+pub struct SymbolsClosesMsg {
+    pub symbols_closes: HashMap<String, Vec<f64>>,
     pub from: OffsetDateTime,
     pub writer_address: Addr<WriterActor>,
 }
+
+// /// The [`SymbolClosesMsg`] message
+// ///
+// /// It contains a `symbol`, a `Vec<f64>` with closing prices for that symbol,
+// /// and the starting date and time `from` field.
+// ///
+// /// It also contains a [`WriterActor`] address.
+// ///
+// /// There is no expected response.
+// #[derive(Message)]
+// #[rtype(result = "()")]
+// pub struct SymbolClosesMsg {
+//     pub symbol: String,
+//     pub closes: Vec<f64>,
+//     pub from: OffsetDateTime,
+//     pub writer_address: Addr<WriterActor>,
+// }
 
 /// Actor for creating performance indicators from fetched stock data
 struct ProcessorActor;
@@ -117,68 +177,73 @@ impl Actor for ProcessorActor {
     type Context = Context<Self>;
 }
 
-/// The [`SymbolClosesMsg`] message handler for the [`ProcessorActor`] actor
-impl Handler<SymbolClosesMsg> for ProcessorActor {
+/// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
+impl Handler<SymbolsClosesMsg> for ProcessorActor {
     type Result = ();
 
-    /// The [`SymbolClosesMsg`] message handler for the [`ProcessorActor`] actor
+    /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
     ///
     /// Sends a [`PerformanceIndicatorsMsg`] message to the [`WriterActor`],
-    /// whose address it gets from the [`SymbolClosesMsg`] message.
-    fn handle(&mut self, msg: SymbolClosesMsg, ctx: &mut Self::Context) -> Self::Result {
-        let symbol = msg.symbol;
-        let closes = msg.closes;
+    /// whose address it gets from the [`SymbolsClosesMsg`] message.
+    fn handle(&mut self, msg: SymbolsClosesMsg, ctx: &mut Self::Context) -> Self::Result {
+        let symbols_closes = msg.symbols_closes;
         let from = msg.from;
         let writer_address = msg.writer_address;
 
         async move {
-            if !closes.is_empty() {
-                let min = MinPrice {};
-                let max = MaxPrice {};
-                let price_diff = PriceDifference {};
-                let n_window_sma = WindowedSMA {
-                    window_size: WINDOW_SIZE,
-                };
+            for symbol_closes in symbols_closes {
+                let symbol = symbol_closes.0;
+                let closes = symbol_closes.1;
 
-                let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
-                let last_price = *closes.last().expect("Expected non-empty closes.");
-                let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
-                let pct_change = pct_change * 100.0;
-                let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
-                let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
-                let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
-                let sma = *sma.last().unwrap_or(&0.0);
+                if !closes.is_empty() {
+                    let min = MinPrice {};
+                    let max = MaxPrice {};
+                    let price_diff = PriceDifference {};
+                    let n_window_sma = WindowedSMA {
+                        window_size: WINDOW_SIZE,
+                    };
 
-                let perf_ind_msg = PerformanceIndicatorsMsg {
-                    from: from.clone(),
-                    symbol: symbol.clone(),
-                    last_price,
-                    pct_change,
-                    period_min,
-                    period_max,
-                    sma,
-                };
+                    let from =
+                        OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
+                    let last_price = *closes.last().expect("Expected non-empty closes.");
+                    let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
+                    let pct_change = pct_change * 100.0;
+                    let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
+                    let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
+                    let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
+                    let sma = *sma.last().unwrap_or(&0.0);
 
-                // // Spawn another Actor and send it the message.
-                // let writer_address = WriterActor {
-                //     file_name: "output.csv".to_string(),
-                //     writer: None,
-                // }
-                // .start(); todo remove
+                    let perf_ind_msg = PerformanceIndicatorsMsg {
+                        from: from.clone(),
+                        symbol: symbol.clone(),
+                        last_price,
+                        pct_change,
+                        period_min,
+                        period_max,
+                        sma,
+                    };
 
-                // Send the message to the single writer actor.
-                let _ = writer_address
-                    .send(perf_ind_msg)
-                    .await
-                    .expect("Couldn't send a message to the WriterActor.");
+                    // // Spawn another Actor and send it the message.
+                    // let writer_address = WriterActor {
+                    //     file_name: "output.csv".to_string(),
+                    //     writer: None,
+                    // }
+                    // .start(); todo remove
 
-                // A simple way to output CSV data
-                println!(
-                    "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                    from, symbol, last_price, pct_change, period_min, period_max, sma,
-                );
-            } else {
-                eprintln!("Got no data for the symbol \"{}\".", symbol);
+                    // Send the message to the single writer actor.
+                    let _ = writer_address
+                        .send(perf_ind_msg)
+                        .await
+                        .expect("Couldn't send a message to the WriterActor.");
+
+                    // A simple way to output CSV data
+                    println!(
+                        "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+                        from, symbol, last_price, pct_change, period_min, period_max, sma,
+                    );
+                } else {
+                    eprintln!("Got no data for the symbol \"{}\".", symbol);
+                }
             }
         }
         .into_actor(self)
@@ -258,44 +323,6 @@ impl Handler<PerformanceIndicatorsMsg> for WriterActor {
         // .spawn(ctx);
     }
 }
-
-// todo use this
-// /// The [`QuoteRequestMsg`] message
-// #[derive(Message)]
-// #[rtype(result = "Vec<Vec<f64>>")]
-// pub struct QuoteRequestMsg {
-//     pub chunk: Vec<String>,
-//     pub from: OffsetDateTime,
-//     pub to: OffsetDateTime,
-// }
-//
-// /// The [`QuoteRequestMsg`] message handler for the [`FetchActor`] actor
-// impl Handler<QuoteRequestMsg> for FetchActor {
-//     type Result = Vec<Vec<f64>>;
-//
-//     fn handle(&mut self, msg: QuoteRequestMsg, ctx: &mut Self::Context) -> Self::Result {
-//         let symbols = msg.chunk;
-//         let from = msg.from;
-//         let to = msg.to;
-//
-//         let provider = yahoo::YahooConnector::new();
-//
-//         let mut result: Vec<Vec<f64>> = vec![];
-//
-//         async move {
-//             for symbol in symbols {
-//                 let closes = fetch_closing_data(&symbol, from, to, &provider)
-//                     .await
-//                     .unwrap_or_default();
-//                 result.push(closes);
-//             }
-//         }
-//         .into_actor(self)
-//         .spawn(ctx);
-//
-//         result
-//     }
-// }
 
 /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
 ///

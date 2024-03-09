@@ -175,8 +175,9 @@ pricing data and calculate key financial metrics in real time.
     - As for performance, the execution time is around `2.5` s.
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
-    - TODO: With async code it was not possible to have the `WriterActor` write out all rows, i.e., performance
+    - With async code it was not possible to have the `WriterActor` write out all rows, i.e., performance
       indicators for all symbols, in the file.
+        - This includes the course-author's `xactor`-based solution.
 - We are using [actix](https://crates.io/crates/actix) as an Actor framework for Rust, and
   its [actix-rt](https://crates.io/crates/actix-rt) as a runtime.
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the

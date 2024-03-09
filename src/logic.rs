@@ -10,10 +10,10 @@ use clap::Parser;
 // use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{FetchActor, QuoteRequestMsg, WriterActor};
+use crate::actors::{FetchActor, QuoteRequestsMsg, WriterActor};
 // use crate::actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
-use crate::constants::{BARRIER_SECONDS, CSV_HEADER, TICK_INTERVAL_SECS};
+use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 
 /// **The main loop**
 ///
@@ -40,7 +40,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
     // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
     let symbols = SYMBOLS.get_or_init(|| symbols);
-    // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
+    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
 
     // // let symbols: Vec<&str> = args.symbols.split(",").collect();
@@ -58,6 +58,17 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // let writer = Some(BufWriter::new(file));
     // println!("WriterActor is started.");
 
+    // // More than one thread is certainly incorrect, but even with only one thread
+    // // not everything gets written to the file, so we can't consider that correct either.
+    // // Not all symbols are written, but even some rows are not complete.
+    // // In fact, not all symbols get printed to stdout, but more do than to the file.
+    // // With stdout at least all rows are complete, but they are printed in a different actor.
+    // // This solution is asynchronous (async/await), so that could be the culprit.
+    // let writer_address = SyncArbiter::start(1, || WriterActor {
+    //     file_name: "output.csv".to_string(),
+    //     writer: None,
+    // });
+
     // We need to ensure that we have one and only one `WriterActor` - a singleton.
     // This is because it writes to a file, and writing to a shared object,
     // such as a file, needs to be synchronized, i.e., sequential.
@@ -71,17 +82,6 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         writer: None,
     }
     .start();
-
-    // // More than one thread is certainly incorrect, but even with only one thread
-    // // not everything gets written to the file, so we can't consider that correct either.
-    // // Not all symbols are written, but even some rows are not complete.
-    // // In fact, not all symbols get printed to stdout, but more do than to the file.
-    // // With stdout at least all rows are complete, but they are printed in a different actor.
-    // // This solution is asynchronous (async/await), so that could be the culprit.
-    // let writer_address = SyncArbiter::start(1, || WriterActor {
-    //     file_name: "output.csv".to_string(),
-    //     writer: None,
-    // });
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
@@ -102,16 +102,16 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // NEW WITH ACTORS
 
-        // Without rayon. Not sequential. Multiple `FetchActor`s. 2.3 s
+        // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly below 2 seconds.
 
-        // We start multiple `FetchActor`s - one per symbol, and they will
-        // start the next Actor in the process - one each.
-        for symbol in symbols.clone() {
+        // We start multiple `FetchActor`s - one per chunk of symbols,
+        // and they will start the next Actor in the process - one each.
+        for chunk in chunks_of_symbols.clone() {
             let fetch_address = FetchActor.start();
 
             let _ = fetch_address
-                .send(QuoteRequestMsg {
-                    symbol: symbol.to_string().clone(),
+                .send(QuoteRequestsMsg {
+                    chunk: chunk.into(),
                     from,
                     to,
                     writer_address: writer_address.clone(),
@@ -119,8 +119,9 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
                 .await?;
         }
 
-        println!("\n\t 1) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
+        // println!("\n\t 1) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
 
+        // todo remove everything
         // We block here to give the writer actor enough time to write everything in the file.
         // We need a kind of barrier.
         // This is not a problem, and doesn't slow our program down, because the barrier
@@ -131,9 +132,9 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         // Rows might not even get fully-written.
         // Does this barrier really help?
         // async_std::task::sleep(Duration::from_secs(BARRIER_SECONDS)).await;
-        tokio::time::sleep(Duration::from_secs(BARRIER_SECONDS)).await;
+        // tokio::time::sleep(Duration::from_secs(BARRIER_SECONDS)).await;// todo remove
 
-        println!("\n\t 2) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
+        // println!("\n\t 2) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
 
         // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
         // It is not much faster (if at all) than the above solution without rayon.
