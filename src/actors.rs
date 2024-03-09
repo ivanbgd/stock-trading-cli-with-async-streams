@@ -29,22 +29,6 @@ pub struct QuoteRequestsMsg {
     pub writer_address: Addr<WriterActor>,
 }
 
-// /// The [`QuoteRequestMsg`] message
-// ///
-// /// It contains a `symbol`, and `from` and `to` fields.
-// ///
-// /// It also contains a [`WriterActor`] address.
-// ///
-// /// There is no expected response.
-// #[derive(Message)]
-// #[rtype(result = "()")]
-// pub struct QuoteRequestMsg {
-//     pub symbol: String,
-//     pub from: OffsetDateTime,
-//     pub to: OffsetDateTime,
-//     pub writer_address: Addr<WriterActor>,
-// }
-
 /// Actor that downloads stock data for a specified symbol and period
 ///
 /// It is stateless - it doesn't contain any user data.
@@ -53,34 +37,6 @@ pub struct FetchActor;
 impl Actor for FetchActor {
     type Context = Context<Self>;
 }
-
-// /// The [`QuoteRequestMsg`] message handler for the [`FetchActor`] actor
-// impl Handler<QuoteRequestMsg> for FetchActor {
-//     type Result = ();
-//
-//     fn handle(&mut self, msg: QuoteRequestMsg, ctx: &mut Self::Context) -> Self::Result {
-//         let symbols = msg.chunk;
-//         let from = msg.from;
-//         let to = msg.to;
-//
-//         let provider = yahoo::YahooConnector::new();
-//
-//         let mut result: Vec<Vec<f64>> = vec![];
-//
-//         async move {
-//             for symbol in symbols {
-//                 let closes = fetch_closing_data(&symbol, from, to, &provider)
-//                     .await
-//                     .unwrap_or_default();
-//                 result.push(closes);
-//             }
-//         }
-//         .into_actor(self)
-//         .spawn(ctx);
-//
-//         result
-//     }
-// } //
 
 /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
 impl Handler<QuoteRequestsMsg> for FetchActor {
@@ -152,23 +108,6 @@ pub struct SymbolsClosesMsg {
     pub from: OffsetDateTime,
     pub writer_address: Addr<WriterActor>,
 }
-
-// /// The [`SymbolClosesMsg`] message
-// ///
-// /// It contains a `symbol`, a `Vec<f64>` with closing prices for that symbol,
-// /// and the starting date and time `from` field.
-// ///
-// /// It also contains a [`WriterActor`] address.
-// ///
-// /// There is no expected response.
-// #[derive(Message)]
-// #[rtype(result = "()")]
-// pub struct SymbolClosesMsg {
-//     pub symbol: String,
-//     pub closes: Vec<f64>,
-//     pub from: OffsetDateTime,
-//     pub writer_address: Addr<WriterActor>,
-// }
 
 /// Actor for creating performance indicators from fetched stock data
 struct ProcessorActor;
@@ -301,10 +240,7 @@ impl Actor for WriterActor {
 impl Handler<PerformanceIndicatorsMsg> for WriterActor {
     type Result = ();
 
-    fn handle(&mut self, msg: PerformanceIndicatorsMsg, ctx: &mut Self::Context) -> Self::Result {
-        // let mut writer = &self.writer;
-
-        // async move {
+    fn handle(&mut self, msg: PerformanceIndicatorsMsg, _ctx: &mut Self::Context) -> Self::Result {
         if let Some(file) = &mut self.writer {
             let _ = writeln!(
                 file,
@@ -318,9 +254,6 @@ impl Handler<PerformanceIndicatorsMsg> for WriterActor {
                 msg.sma,
             );
         }
-        // }
-        // .into_actor(self)
-        // .spawn(ctx);
     }
 }
 
@@ -336,7 +269,10 @@ async fn fetch_closing_data(
     to: OffsetDateTime,
     provider: &yahoo::YahooConnector,
 ) -> Result<Vec<f64>, yahoo::YahooError> {
+    // This function takes a single symbol.
+    // The crate that we're using doesn't contain a function that works with a chunk of symbols.
     let yresponse = provider.get_quote_history(symbol, from, to).await?;
+
     let mut quotes = yresponse.quotes()?;
 
     let mut result = vec![];
@@ -347,54 +283,3 @@ async fn fetch_closing_data(
 
     Ok(result)
 }
-
-// todo consider this for chunks
-//
-//
-//
-//
-// /// Convenience function that chains together the entire processing chain
-// ///
-// /// We don't need to return anything.
-// pub async fn handle_symbol_data(
-//     // symbols: &[&str],
-//     symbols: &[String],
-//     from: OffsetDateTime,
-//     to: OffsetDateTime,
-// ) {
-//     let provider = yahoo::YahooConnector::new();
-//
-//     for symbol in symbols {
-//         let closes = fetch_closing_data(symbol, from, to, &provider)
-//             .await
-//             .unwrap_or_default();
-//
-//         if !closes.is_empty() {
-//             let min = MinPrice {};
-//             let max = MaxPrice {};
-//             let price_diff = PriceDifference {};
-//             let n_window_sma = WindowedSMA {
-//                 window_size: WINDOW_SIZE,
-//             };
-//
-//             let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
-//             let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
-//             let last_price = *closes.last().expect("Expected non-empty closes.");
-//             let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
-//             let pct_change = pct_change * 100.0;
-//             let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
-//
-//             // A simple way to output CSV data
-//             println!(
-//                 "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-//                 OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'."),
-//                 symbol,
-//                 last_price,
-//                 pct_change,
-//                 period_min,
-//                 period_max,
-//                 sma.last().unwrap_or(&0.0)
-//             );
-//         }
-//     }
-// }

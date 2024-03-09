@@ -103,6 +103,7 @@ pricing data and calculate key financial metrics in real time.
       the `async/await` paradigm is a good choice in this case.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
+- We couldn't measure execution time properly in case of asynchronous code.
 
 ### Asynchronous Multi-Threaded Implementation
 
@@ -172,7 +173,14 @@ pricing data and calculate key financial metrics in real time.
     - The `FetchActor` is responsible for fetching data from the Yahoo! Finance API.
     - The `ProcessorActor` calculates performance indicators and prints them to `stdout`.
     - The `WriterActor` writes the performance indicators to a `CSV` file.
-    - As for performance, the execution time is around `2.5` s.
+    - As for performance, the execution time is around `2.5` s without chunks.
+        - Each actor works with a single symbol.
+        - There are as many `FetchActor`s and `ProcessorActor`s as there are symbols.
+    - If we introduce chunks, the performance increases.
+        - We worked with chunk size equal 5.
+        - There are as many `FetchActor`s and `ProcessorActor`s as there are chunks.
+            - The execution time was possibly below `2` seconds.
+        - If the `WriterActor` also works with chunks (of the same size)... TODO
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
     - With async code it was not possible to have the `WriterActor` write out all rows, i.e., performance
@@ -278,6 +286,9 @@ $ export SYMBOLS="$(cat sp500_feb_2024.csv)" && cargo run -- --from 2023-07-03T1
 - We also implemented the Actor Model. It uses message passing between actors.
 - Working with *chunks* of data instead of with individual pieces of data improves performance.
     - Not all chunk sizes perform the same, so we need to find a sweet spot - an optimal chunk size.
+- It probably helps even more so in a distributed setting (a distributed network of nodes) to send larger messages,
+  than smaller ones, in both ways, which means to work with chunks instead of individual symbols.
+- We couldn't measure execution time properly in case of asynchronous code.
 
 TODO:     - This proved to be the fastest solution for this concrete problem.
 
