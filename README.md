@@ -181,7 +181,8 @@ pricing data and calculate key financial metrics in real time.
         - There are as many `FetchActor`s and `ProcessorActor`s as there are chunks.
             - The execution time was possibly below `2` seconds.
         - If the `WriterActor` also works with chunks (of the same size and with the same amount of them), the execution
-          time is again below `2` seconds, but possibly even shorter than in the previous case, i.e., around `1.5` s.
+          time is again below `2` seconds, but possibly even shorter than in the previous case, i.e., around `1.5` s,
+          making it a very fast solution.
             - This includes flushing of the buffer to file with every chunk, which makes it possible to write all rows
               to the file, and to still get an even better performance in terms of execution speed.
             - We are using `std::io::BufWriter` to improve the write performance. It wouldn't make sense to flush the

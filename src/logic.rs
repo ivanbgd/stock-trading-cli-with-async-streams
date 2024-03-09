@@ -102,7 +102,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // NEW WITH ACTORS
 
-        // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly below 2 seconds.
+        // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
 
         // We start multiple `FetchActor`s - one per chunk of symbols,
         // and they will start the next Actor in the process - one each.
@@ -118,23 +118,6 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
                 })
                 .await?;
         }
-
-        // println!("\n\t 1) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
-
-        // todo remove everything
-        // We block here to give the writer actor enough time to write everything in the file.
-        // We need a kind of barrier.
-        // This is not a problem, and doesn't slow our program down, because the barrier
-        // time is much shorter than the interval time for downloading and processing data.
-        // Both variants work the same, but since "Actix" is based on "Tokio" and not on "async_std",
-        // it makes more sense to use the "Tokio" variant.
-        // Unfortunately, neither works fully. Namely, not all rows get written out into the file.
-        // Rows might not even get fully-written.
-        // Does this barrier really help?
-        // async_std::task::sleep(Duration::from_secs(BARRIER_SECONDS)).await;
-        // tokio::time::sleep(Duration::from_secs(BARRIER_SECONDS)).await;// todo remove
-
-        // println!("\n\t 2) ***** {} *****\n", OffsetDateTime::now_utc()); // todo remove
 
         // With rayon. Not sequential. Multiple `FetchActor`s. ~2.5 s
         // It is not much faster (if at all) than the above solution without rayon.
