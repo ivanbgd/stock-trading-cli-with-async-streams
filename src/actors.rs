@@ -9,7 +9,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
-use crate::constants::{CSV_HEADER, WINDOW_SIZE};
+use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
 /// The [`QuoteRequestsMsg`] message
@@ -214,6 +214,15 @@ pub struct PerformanceIndicatorsRowsMsg {
 pub struct WriterActor {
     pub file_name: String,
     pub writer: Option<BufWriter<File>>,
+}
+
+impl WriterActor {
+    pub fn new() -> Self {
+        Self {
+            file_name: CSV_FILE_NAME.to_string(),
+            writer: None,
+        }
+    }
 }
 
 impl Actor for WriterActor {

@@ -78,11 +78,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // Actors have mailboxes and process messages that they receive one at a time,
     // i.e., sequentially, and hence we can accomplish synchronization implicitly
     // by using a single writer actor.
-    let writer_address = WriterActor {
-        file_name: "output.csv".to_string(),
-        writer: None,
-    }
-    .start();
+    let writer_address = WriterActor::new().start();
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
