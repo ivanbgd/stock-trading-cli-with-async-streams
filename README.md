@@ -190,6 +190,7 @@ pricing data and calculate key financial metrics in real time.
               symbol, although, that would make the solution correct because it would write all rows to the file. Still,
               to have both good performance and a correct solution, we should use chunks and flush the buffer for every
               chunk.
+        - Using `rayon` is at least equally fast, but probably not faster.
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
     - With async code it was not possible to have the `WriterActor` write out all 503 rows, i.e., performance
