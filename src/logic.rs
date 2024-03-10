@@ -105,49 +105,49 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
 
-        // // We start multiple `FetchActor`s - one per chunk of symbols,
-        // // and they will start the next Actor in the process - one each.
-        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
-        // for chunk in chunks_of_symbols.clone() {
-        //     let fetch_address = FetchActor.start();
-        //
-        //     let _ = fetch_address
-        //         .send(QuoteRequestsMsg {
-        //             chunk: chunk.into(),
-        //             from,
-        //             to,
-        //             writer_address: writer_address.clone(),
-        //         })
-        //         .await?;
-        // }
-
-        // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
-        // It is not much faster (if at all) than the above solution without rayon.
-        // Namely, execution time is not measured properly in this case, but it's roughly the same.
-        // Performance is the same when using regular (core) `chunks()` and `rayon`'s `par_chunks()`.
-
         // We start multiple `FetchActor`s - one per chunk of symbols,
         // and they will start the next Actor in the process - one each.
         // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
         // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
         // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
-        let queries: Vec<_> = chunks_of_symbols
-            .par_iter()
-            .map(|chunk| async {
-                FetchActor
-                    .start()
-                    .send(QuoteRequestsMsg {
-                        chunk: (*chunk).into(),
-                        from,
-                        to,
-                        writer_address: writer_address.clone(),
-                    })
-                    .await
-            })
-            .collect();
-        let _ = futures::future::join_all(queries).await;
+        for chunk in chunks_of_symbols.clone() {
+            let fetch_address = FetchActor.start();
+
+            let _ = fetch_address
+                .send(QuoteRequestsMsg {
+                    chunk: chunk.into(),
+                    from,
+                    to,
+                    writer_address: writer_address.clone(),
+                })
+                .await?;
+        }
+
+        // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
+        // // It is not much faster (if at all) than the above solution without rayon.
+        // // Namely, execution time is not measured properly in this case, but it's roughly the same.
+        // // Performance is the same when using regular (core) `chunks()` and `rayon`'s `par_chunks()`.
+        //
+        // // We start multiple `FetchActor`s - one per chunk of symbols,
+        // // and they will start the next Actor in the process - one each.
+        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+        // // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
+        // let queries: Vec<_> = chunks_of_symbols
+        //     .par_iter()
+        //     .map(|chunk| async {
+        //         FetchActor
+        //             .start()
+        //             .send(QuoteRequestsMsg {
+        //                 chunk: (*chunk).into(),
+        //                 from,
+        //                 to,
+        //                 writer_address: writer_address.clone(),
+        //             })
+        //             .await
+        //     })
+        //     .collect();
+        // let _ = futures::future::join_all(queries).await;
 
         // OLD WITH ACTORS
 

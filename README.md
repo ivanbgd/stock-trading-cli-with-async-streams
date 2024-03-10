@@ -248,7 +248,8 @@ The `git` commit history contains descriptive comments.
 - [rayon](https://crates.io/crates/rayon), as a data-parallelism library for Rust
 - [time](https://crates.io/crates/time), as a date and time library (used by `yahoo_finance_api`)
 - [Tokio](https://tokio.rs/), as an asynchronous runtime - used both directly and as a dependency of some other crates
-- [xactor](https://crates.io/crates/xactor), as a Rust Actors framework based on async-std
+- [xactor](https://crates.io/crates/xactor), as a Rust Actors framework based on async-std (it also supports Tokio as
+  runtime instead of async-std)
 - [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api), as an adapter for
   the [Yahoo! Finance API](https://finance.yahoo.com/) to fetch histories of market data quotes
 
