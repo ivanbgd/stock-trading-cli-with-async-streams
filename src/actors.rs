@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use actix::{
-    Actor, ActorContext, Addr, Context, ContextFutureSpawner, Handler, Message, WrapFuture,
-};
+use actix::{Actor, ActorContext, Context, Handler, Message, Recipient};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -12,26 +10,181 @@ use yahoo_finance_api as yahoo;
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
+//
+// *** The "BrokerActor" ***
+//
+
+// todo remove
+/// The [`QuoteRequestsOriginalMsg`] message
+///
+/// It contains a `chunk` of symbols, and `from` and `to` fields.
+///
+/// There is no expected response.
+#[derive(Message, Clone)]
+#[rtype(result = "()")]
+pub struct QuoteRequestsOriginalMsg {
+    pub chunk: Vec<String>,
+    pub from: OffsetDateTime,
+    pub to: OffsetDateTime,
+}
+
+/// Actor that takes and forwards (sends) [`QuoteRequestsMsg`] messages (events)
+///
+/// This actor is meant to have a broker role.
+///
+/// It takes [`QuoteRequestsMsg`] messages and simply forwards them to its subscribers.
+///
+/// This actor is **not** a Subscriber. It gets the messages directly and not through subscription.
+///
+/// This actor is a Publisher. It publishes [`QuoteRequestsMsg`] for the [`FetchActor`]s.
+/// It provides [`QuoteRequestsMsg`] event subscriptions.
+pub struct BrokerActor {
+    subscribers: Vec<Recipient<QuoteRequestsMsg>>,
+    // msg: QuoteRequestsMsg, //todo remove
+}
+
+impl Actor for BrokerActor {
+    type Context = Context<Self>;
+}
+
+impl BrokerActor {
+    /// Initialize `subscribers` with empty vector
+    pub(crate) fn new() -> Self {
+        Self {
+            subscribers: vec![],
+            // subscribers: Vec::<Recipient<QuoteRequestsMsg>>::new(),
+            // msg: QuoteRequestsMsg {
+            //     chunk: vec![],
+            //     from: OffsetDateTime::now_utc(),
+            //     to: OffsetDateTime::now_utc(),
+            // }, //todo remove
+        }
+    }
+
+    /// Send event notification to all subscribers
+    async fn notify(&mut self, msg: QuoteRequestsOriginalMsg) {
+        for subscriber in &self.subscribers {
+            subscriber
+                .send(QuoteRequestsMsg {
+                    chunk: msg.chunk.clone(),
+                    from: msg.from,
+                    to: msg.to,
+                }) // todo remove
+                // .send(msg.clone())
+                .await
+                .expect("Couldn't send a message to the FetchActor.");
+        }
+    }
+}
+
+impl Handler<QuoteRequestsOriginalMsg> for BrokerActor {
+    type Result = ();
+
+    fn handle(&mut self, msg: QuoteRequestsOriginalMsg, _ctx: &mut Self::Context) -> Self::Result {
+        // async move {
+        //     // self.notify(msg).await;
+        //
+        //     for subscriber in &self.subscribers {
+        //         subscriber
+        //             .send(QuoteRequestsMsg {
+        //                 chunk: msg.chunk.clone(),
+        //                 from: msg.from,
+        //                 to: msg.to,
+        //             })
+        //             .await
+        //             .expect("Couldn't send a message to the FetchActor.");
+        //     }
+        // }
+        // .into_actor(self)
+        // .spawn(ctx); // todo remove
+
+        // let _ = Box::pin(async move { self.notify(msg).await });
+
+        let _ = Box::pin(async {
+            for subscriber in &self.subscribers {
+                subscriber
+                    .send(QuoteRequestsMsg {
+                        chunk: msg.chunk.clone(),
+                        from: msg.from,
+                        to: msg.to,
+                    }) // todo remove
+                    // .send(msg.clone())
+                    .await
+                    .expect("Couldn't send a message to the FetchActor.");
+            }
+        });
+    }
+}
+
+/// Register subscribers (listeners) - [`FetchActor`]s
+impl Handler<SubscribeQuoteRequestsMsg> for BrokerActor {
+    type Result = ();
+
+    /// Register subscribers (listeners) - [`FetchActor`]s
+    fn handle(&mut self, msg: SubscribeQuoteRequestsMsg, _ctx: &mut Self::Context) -> Self::Result {
+        self.subscribers.push(msg.0);
+    }
+}
+
+//
+// *** The "FetchActor" ***
+//
+
+/// Subscribe to the [`QuoteRequestsMsg`] event
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SubscribeQuoteRequestsMsg(pub Recipient<QuoteRequestsMsg>);
+
 /// The [`QuoteRequestsMsg`] message
 ///
 /// It contains a `chunk` of symbols, and `from` and `to` fields.
 ///
-/// It also contains a [`WriterActor`] address.
+/// It also contains a [`WriterActor`] address. todo remove
 ///
 /// There is no expected response.
-#[derive(Message)]
+#[derive(Message, Clone)]
 #[rtype(result = "()")]
 pub struct QuoteRequestsMsg {
     pub chunk: Vec<String>,
     pub from: OffsetDateTime,
     pub to: OffsetDateTime,
-    pub writer_address: Addr<WriterActor>,
+    // pub writer_address: Addr<WriterActor>, // todo remove
 }
 
 /// Actor that downloads stock data for a specified symbol and period
 ///
-/// It is stateless - it doesn't contain any user data.
-pub struct FetchActor;
+/// This actor is a Subscriber. It subscribes to the [`QuoteRequestsMsg`] messages (events).
+///
+/// This actor is also a Publisher. It publishes [`SymbolsClosesMsg`] for the [`ProcessorActor`]s.
+/// It provides [`SymbolsClosesMsg`] event subscriptions.
+// #[derive(Clone)] todo rm
+pub struct FetchActor {
+    subscribers: Vec<Recipient<SymbolsClosesMsg>>,
+    // msg: SymbolsClosesMsg, //todo remove
+}
+
+impl FetchActor {
+    /// Initialize `subscribers` with empty vector
+    pub fn new() -> Self {
+        Self {
+            subscribers: vec![],
+            // msg: SymbolsClosesMsg {
+            //     symbols_closes: HashMap::new(),
+            //     from: OffsetDateTime::now_utc(),
+            // }, //todo remove
+        }
+    }
+
+    // /// Send event notification to all subscribers
+    // async fn notify(&mut self) {
+    //     for subscriber in &self.subscribers {
+    //         subscriber
+    //             .send(self.msg)
+    //             .await
+    //             .expect("Couldn't send a message to the ProcessorActor.");
+    //     }
+    // } // todo remove
+}
 
 impl Actor for FetchActor {
     type Context = Context<Self>;
@@ -43,7 +196,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
     /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
     ///
-    /// Spawns a new [`ProcessorActor`] and sends it a [`SymbolsClosesMsg`] message.
+    /// Spawns a new [`ProcessorActor`] and sends it a [`SymbolsClosesMsg`] message. // todo check
     ///
     /// The message contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol
     /// in case there was no error when fetching the data, or an empty vector in case of an error,
@@ -51,17 +204,17 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
     /// we don't break the program but rather continue.
-    fn handle(&mut self, msg: QuoteRequestsMsg, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: QuoteRequestsMsg, _ctx: &mut Self::Context) -> Self::Result {
         let symbols = msg.chunk;
         let from = msg.from;
         let to = msg.to;
-        let writer_address = msg.writer_address;
+        // let writer_address = msg.writer_address; // todo rm
 
         let provider = yahoo::YahooConnector::new();
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
 
-        async move {
+        let _ = Box::pin(async move {
             for symbol in symbols {
                 let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
                     Ok(closes) => closes,
@@ -78,38 +231,87 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
                 symbols_closes.insert(symbol, closes);
             }
 
-            let symbols_closes_msg = SymbolsClosesMsg { symbols_closes, from, writer_address };
+            // let symbols_closes_msg = SymbolsClosesMsg { symbols_closes, from, writer_address }; todo remove
 
-            // Spawn another Actor and send it the message.
-            let proc_address = ProcessorActor.start();
-            let _ = proc_address
-                .send(symbols_closes_msg)
-                .await
-                .expect("Couldn't send a message to the ProcessorActor.");
-        }
-        .into_actor(self)
-        .spawn(ctx);
+            let symbols_closes_msg = SymbolsClosesMsg {
+                symbols_closes,
+                from,
+            };
+
+            // self.msg = symbols_closes_msg; // todo rm
+
+            // Send event notification to all subscribers
+            for subscriber in &self.subscribers {
+                subscriber
+                    .send(symbols_closes_msg.clone())
+                    .await
+                    .expect("Couldn't send a message to the ProcessorActor.");
+            }
+
+            // // Spawn another Actor and send it the message. // todo rm
+            // let proc_address = ProcessorActor.start();
+            // let _ = proc_address
+            //     .send(symbols_closes_msg)
+            //     .await
+            //     .expect("Couldn't send a message to the ProcessorActor.");
+        });
+        // .into_actor(self)
+        // .spawn(ctx);
     }
 }
+
+/// Register subscribers (listeners) - [`ProcessorActor`]s
+impl Handler<SubscribeSymbolsClosesMsg> for FetchActor {
+    type Result = ();
+
+    /// Register subscribers (listeners) - [`ProcessorActor`]s
+    fn handle(&mut self, msg: SubscribeSymbolsClosesMsg, _ctx: &mut Self::Context) -> Self::Result {
+        self.subscribers.push(msg.0);
+    }
+}
+
+//
+// *** The "ProcessorActor" ***
+//
+
+/// Subscribe to the [`SymbolsClosesMsg`] event
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SubscribeSymbolsClosesMsg(pub Recipient<SymbolsClosesMsg>);
 
 /// The [`SymbolsClosesMsg`] message
 ///
 /// It contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol,
 /// and the starting date and time `from` field.
 ///
-/// It also contains a [`WriterActor`] address.
+/// It also contains a [`WriterActor`] address. // todo remove
 ///
 /// There is no expected response.
-#[derive(Message)]
+#[derive(Message, Clone)]
 #[rtype(result = "()")]
 pub struct SymbolsClosesMsg {
     pub symbols_closes: HashMap<String, Vec<f64>>,
     pub from: OffsetDateTime,
-    pub writer_address: Addr<WriterActor>,
+    // pub writer_address: Addr<WriterActor>, // todo remove
 }
 
 /// Actor for creating performance indicators from fetched stock data
-struct ProcessorActor;
+///
+/// This actor is a Subscriber. It subscribes to the [`SymbolsClosesMsg`] messages (events).
+///
+/// This actor is also a Publisher. It publishes [`PerformanceIndicatorsRowsMsg`] for the [`WriterActor`]s.
+/// It provides [`PerformanceIndicatorsRowsMsg`] event subscriptions.
+pub struct ProcessorActor {
+    subscribers: Vec<Recipient<PerformanceIndicatorsRowsMsg>>,
+}
+
+impl ProcessorActor {
+    pub fn new() -> Self {
+        Self {
+            subscribers: vec![],
+        }
+    }
+}
 
 impl Actor for ProcessorActor {
     type Context = Context<Self>;
@@ -121,16 +323,16 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
 
     /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
     ///
-    /// Sends a [`PerformanceIndicatorsRowsMsg`] message to the [`WriterActor`],
-    /// whose address it gets from the [`SymbolsClosesMsg`] message.
-    fn handle(&mut self, msg: SymbolsClosesMsg, ctx: &mut Self::Context) -> Self::Result {
+    /// Sends a [`PerformanceIndicatorsRowsMsg`] message to the [`WriterActor`], // todo check
+    /// whose address it gets from the [`SymbolsClosesMsg`] message. // todo check
+    fn handle(&mut self, msg: SymbolsClosesMsg, _ctx: &mut Self::Context) -> Self::Result {
         let symbols_closes = msg.symbols_closes;
         let from = msg.from;
-        let writer_address = msg.writer_address;
+        // let writer_address = msg.writer_address; // todo rm
 
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
 
-        async move {
+        let _ = Box::pin(async move {
             let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
 
             for symbol_closes in symbols_closes {
@@ -176,18 +378,50 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
 
             let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
 
-            // Send the message to the single writer actor.
-            let _ = writer_address
-                .send(perf_ind_msg)
-                .await
-                .expect("Couldn't send a message to the WriterActor.");
-        }
-        .into_actor(self)
-        .spawn(ctx);
+            // Send event notification to all subscribers
+            for subscriber in &self.subscribers {
+                subscriber
+                    .send(perf_ind_msg.clone())
+                    .await
+                    .expect("Couldn't send a message to the WriterActor.");
+            }
+
+            // // Send the message to the single writer actor. // todo rm
+            // let _ = writer_address
+            //     .send(perf_ind_msg)
+            //     .await
+            //     .expect("Couldn't send a message to the WriterActor.");
+        });
+        // .into_actor(self)
+        // .spawn(ctx);
     }
 }
 
+/// Register subscribers (listeners) - [`WriterActor`]s
+impl Handler<SubscribePerformanceIndicatorsRowsMsg> for ProcessorActor {
+    type Result = ();
+
+    /// Register subscribers (listeners) - [`WriterActor`]s
+    fn handle(
+        &mut self,
+        msg: SubscribePerformanceIndicatorsRowsMsg,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
+        self.subscribers.push(msg.0);
+    }
+}
+
+//
+// *** The "WriterActor" ***
+//
+
+/// Subscribe to the [`PerformanceIndicatorsRowsMsg`] event
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SubscribePerformanceIndicatorsRowsMsg(pub Recipient<PerformanceIndicatorsRowsMsg>);
+
 /// A single row of calculated performance indicators for a symbol
+#[derive(Clone)]
 pub struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
@@ -203,7 +437,7 @@ pub struct PerformanceIndicatorsRow {
 /// and calculated performance indicators for a chunk of symbols.
 ///
 /// There is no expected response.
-#[derive(Message)]
+#[derive(Message, Clone)]
 #[rtype(result = "()")]
 pub struct PerformanceIndicatorsRowsMsg {
     pub from: String,
@@ -211,6 +445,10 @@ pub struct PerformanceIndicatorsRowsMsg {
 }
 
 /// Actor for writing calculated performance indicators for fetched stock data into a CSV file
+///
+/// This actor is a Subscriber. It subscribes to the [`PerformanceIndicatorsRowsMsg`] messages (events).
+///
+/// This actor is **not** a Publisher.
 pub struct WriterActor {
     pub file_name: String,
     pub writer: Option<BufWriter<File>>,
@@ -280,6 +518,10 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
         }
     }
 }
+
+//
+// *** Helper Function(s) ***
+//
 
 /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
 ///

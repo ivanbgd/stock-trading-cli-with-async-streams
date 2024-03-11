@@ -1,20 +1,25 @@
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+// use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use actix::Actor;
 // use actix::{Actor, SyncArbiter};
 use actix_rt::System;
-// use async_std::stream::{self, StreamExt};
-use async_std::stream::{self, StreamExt};
 use clap::Parser;
 // use rayon::prelude::*;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{FetchActor, QuoteRequestsMsg, WriterActor};
+use crate::actors::{
+    BrokerActor, FetchActor, ProcessorActor, QuoteRequestsOriginalMsg,
+    SubscribePerformanceIndicatorsRowsMsg, SubscribeQuoteRequestsMsg, SubscribeSymbolsClosesMsg,
+    WriterActor,
+};
 // use crate::actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
+
+/* use async_std::stream::{self, StreamExt}; */
 
 /// **The main loop**
 ///
@@ -70,6 +75,18 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     //     writer: None,
     // });
 
+    let broker_address = BrokerActor::new().start();
+
+    let fetch_address = FetchActor::new().start();
+    // We are required to clone, but then we get a new instance of the actor object,
+    // and we don't work with the desired instance anymore.
+    // The issue is that some of our actors are both publishers and subscribers
+    // at the same time, and perhaps Actix simply doesn't support that.
+    let fetch_subscriber = SubscribeQuoteRequestsMsg(fetch_address.clone().recipient());
+
+    let processor_address = ProcessorActor::new().start();
+    let processor_subscriber = SubscribeSymbolsClosesMsg(processor_address.clone().recipient());
+
     // We need to ensure that we have one and only one `WriterActor` - a singleton.
     // This is because it writes to a file, and writing to a shared object,
     // such as a file, needs to be synchronized, i.e., sequential.
@@ -79,13 +96,30 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // i.e., sequentially, and hence we can accomplish synchronization implicitly
     // by using a single writer actor.
     let writer_address = WriterActor::new().start();
+    let writer_subscriber =
+        SubscribePerformanceIndicatorsRowsMsg(writer_address.clone().recipient());
 
-    let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+    broker_address.send(fetch_subscriber).await?;
+    fetch_address.send(processor_subscriber).await?;
+    processor_address.send(writer_subscriber).await?;
 
-    while let Some(_) = interval.next().await {
-        // TODO: uncomment
-        // todo: remove the FOR line
-        // for _ in 0..1 {
+    // todo rm
+    let mut chunk = vec![];
+    chunk.push(String::from("KO"));
+    broker_address
+        .send(QuoteRequestsOriginalMsg {
+            chunk,
+            from,
+            to: OffsetDateTime::now_utc(),
+        })
+        .await?;
+
+    // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+
+    // while let Some(_) = interval.next().await {
+    // TODO: uncomment
+    // todo: remove the FOR line
+    for _ in 0..1 {
         // We always want a fresh period end time, which is "now" in the UTC time zone.
         let to = OffsetDateTime::now_utc();
 
@@ -107,16 +141,18 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
         // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
         for chunk in chunks_of_symbols.clone() {
-            let fetch_address = FetchActor.start();
+            // let broker_address = BrokerActor::new().start();
 
-            let _ = fetch_address
-                .send(QuoteRequestsMsg {
+            let _ = broker_address
+                .send(QuoteRequestsOriginalMsg {
                     chunk: chunk.into(),
                     from,
                     to,
-                    writer_address: writer_address.clone(),
+                    // writer_address: writer_address.clone(),
                 })
                 .await?;
+
+            // broker_address.send(fetch_subscriber.clone()).await?;
         }
 
         // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.

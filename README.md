@@ -206,6 +206,19 @@ pricing data and calculate key financial metrics in real time.
         - We do this in case the `WriterActor` also works with *chunks*.
     - All 503 rows do get printed to `stdout` regardless of the `WriterActor`, as the output to console is handled by
       the `ProcessorActor`.
+- **[WIP]**: We experimented with the Publisher/Subscriber model with the `Actix` framework, to get a feel of it.
+    - The Publisher/Subscriber model is generally better suited to applications that have a number of different
+      instances of the same actor, and they should all get the message, or where there are different types of subscriber
+      actors which should all receive the message, i.e., be notified of it.
+    - Our application is not like that, but we still wanted to try it out and play around with it a little.
+        - Namely, we don't want our actors to do the double work, so we have only one instance of each.
+        - We could try to implement multiple instances of actors for fun, to see if all of them really get the messages.
+            - For some more fun, we could randomize sending messages to only instance of each type of actor. They
+              wouldn't be doing double work in that case, which would make the implementation correct.
+    - We weren't able to make it work.
+        - The issue is that some of our actors are both publishers and subscribers at the same time, and perhaps Actix
+          simply doesn't support that.
+    - Performance...
 - We are using [actix](https://crates.io/crates/actix) as an Actor framework for Rust, and
   its [actix-rt](https://crates.io/crates/actix-rt) as a runtime.
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the
@@ -321,6 +334,8 @@ TODO:     - This proved to be the fastest solution for this concrete problem.
     - [actix](https://crates.io/crates/actix) might support this feature through the use
       of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);
       also [see here](https://actix.rs/docs/actix/address#recipient).
+        - We tried to do this, to no avail. Perhaps we are missing something, or perhaps Actix doesn't allow actors to
+          be both a publisher and a subscriber at the same time, which is what we need.
     - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
       been updated in about three years. Also, `actix` is far more popular.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
