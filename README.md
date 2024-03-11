@@ -217,8 +217,14 @@ pricing data and calculate key financial metrics in real time.
               wouldn't be doing double work in that case, which would make the implementation correct.
     - We weren't able to make it work.
         - The issue is that some of our actors are both publishers and subscribers at the same time, and perhaps Actix
-          simply doesn't support that.
-    - Performance...
+          simply doesn't support that, or at least not with async functions.
+        - Perhaps it can be solved, but I am not sure. Check out:
+            - https://github.com/actix/actix/blob/master/actix/examples/ring.rs - All Nodes in the example are of the
+              same type, but this doesn't seem like a Publisher/Subscriber model. They create a node from another node
+              to form a ring (a full circle) of nodes, but that's not P/S.
+            - The [actix-broker](https://crates.io/crates/actix-broker) crate.
+                - https://github.com/actix/actix/blob/master/actix-broker/examples/basic.rs
+    - Performance: N/A
 - We are using [actix](https://crates.io/crates/actix) as an Actor framework for Rust, and
   its [actix-rt](https://crates.io/crates/actix-rt) as a runtime.
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the
@@ -334,8 +340,9 @@ TODO:     - This proved to be the fastest solution for this concrete problem.
     - [actix](https://crates.io/crates/actix) might support this feature through the use
       of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);
       also [see here](https://actix.rs/docs/actix/address#recipient).
-        - We tried to do this, to no avail. Perhaps we are missing something, or perhaps Actix doesn't allow actors to
-          be both a publisher and a subscriber at the same time, which is what we need.
+        - [We tried to do this](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/tree/cff6a85614817673ca41987ba3f8f8049a3b1df0),
+          to no avail. Perhaps we are missing something, or perhaps Actix doesn't allow actors to be both a publisher
+          and a subscriber at the same time, which is what we need.
     - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
       been updated in about three years. Also, `actix` is far more popular.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in

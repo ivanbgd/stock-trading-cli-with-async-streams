@@ -81,8 +81,13 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     // We are required to clone, but then we get a new instance of the actor object,
     // and we don't work with the desired instance anymore.
     // The issue is that some of our actors are both publishers and subscribers
-    // at the same time, and perhaps Actix simply doesn't support that.
+    // at the same time, and perhaps Actix simply doesn't support that, or at least
+    // not with async functions. Namely, `do_send()` without an async block around it
+    // seem to work, but it doesn't work for actors that require an async block.
     let fetch_subscriber = SubscribeQuoteRequestsMsg(fetch_address.clone().recipient());
+
+    let fetch_address2 = FetchActor::new().start();
+    let fetch_subscriber2 = SubscribeQuoteRequestsMsg(fetch_address2.clone().recipient());
 
     let processor_address = ProcessorActor::new().start();
     let processor_subscriber = SubscribeSymbolsClosesMsg(processor_address.clone().recipient());
@@ -100,10 +105,12 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         SubscribePerformanceIndicatorsRowsMsg(writer_address.clone().recipient());
 
     broker_address.send(fetch_subscriber).await?;
+    broker_address.send(fetch_subscriber2).await?; // It indeed has 2 subscribers.
     fetch_address.send(processor_subscriber).await?;
     processor_address.send(writer_subscriber).await?;
 
     // todo rm
+    println!("\n\n---------------");
     let mut chunk = vec![];
     chunk.push(String::from("KO"));
     broker_address
@@ -113,6 +120,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
             to: OffsetDateTime::now_utc(),
         })
         .await?;
+    println!("---------------\n\n");
 
     // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
