@@ -11,130 +11,7 @@ use yahoo_finance_api as yahoo;
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
-// use actix::{Actor, ActorContext, Context, Handler, Message, Recipient};
-
 type _BrokerType = SystemBroker;
-
-// //
-// // *** The "BrokerActor" ***
-// //
-//
-// // todo: remove if not required, but it could be required
-// /// The [`QuoteRequestsOriginalMsg`] message
-// ///
-// /// It contains a `chunk` of symbols, and `from` and `to` fields.
-// ///
-// /// There is no expected response.
-// #[derive(Message, Clone, Debug)]
-// #[rtype(result = "()")]
-// pub struct QuoteRequestsOriginalMsg {
-//     pub chunk: Vec<String>,
-//     pub from: OffsetDateTime,
-//     pub to: OffsetDateTime,
-// }
-//
-// /// Actor that takes and forwards (sends) [`QuoteRequestsMsg`] messages (events)
-// ///
-// /// This actor is meant to have a broker role.
-// ///
-// /// It takes [`QuoteRequestsMsg`] messages and simply forwards them to its subscribers.
-// ///
-// /// This actor is **not** a Subscriber. It gets the messages directly and not through subscription.
-// ///
-// /// This actor is a Publisher. It publishes [`QuoteRequestsMsg`] for the [`FetchActor`]s.
-// /// It provides [`QuoteRequestsMsg`] event subscriptions.
-// #[derive(Debug)]
-// pub struct BrokerActor {
-//     subscribers: Vec<Recipient<QuoteRequestsMsg>>,
-// }
-//
-// impl Actor for BrokerActor {
-//     type Context = Context<Self>;
-//
-//     // fn started(&mut self, ctx: &mut Self::Context) {
-//     //     println!("BrokerActor started");
-//     //
-//     //     // Asynchronously subscribe to a message on the system (global) broker
-//     //     self.subscribe_system_async::<MessageOne>(ctx);
-//     //
-//     //     self.subscribe_sync::<BrokerType, QuoteRequestsMsg>(ctx);
-//     //     self.issue_async::<BrokerType, _>(MessageOne("hello".to_string()));
-//     //     let _ = ctx.run_later(Duration::from_millis(50), |_, _| {
-//     //         System::current().stop();
-//     //         println!("Bye!");
-//     //     });
-//     // }
-// }
-//
-// impl BrokerActor {
-//     /// Initialize `subscribers` with empty vector
-//     pub(crate) fn new() -> Self {
-//         Self {
-//             subscribers: vec![],
-//         }
-//     }
-// }
-//
-// impl Handler<QuoteRequestsOriginalMsg> for BrokerActor {
-//     type Result = ();
-//
-//     fn handle(&mut self, msg: QuoteRequestsOriginalMsg, _ctx: &mut Self::Context) -> Self::Result {
-//         // async move {
-//         //     // self.notify(msg).await;
-//         //
-//         //     for subscriber in &self.subscribers {
-//         //         subscriber
-//         //             .send(QuoteRequestsMsg {
-//         //                 chunk: msg.chunk.clone(),
-//         //                 from: msg.from,
-//         //                 to: msg.to,
-//         //             })
-//         //             .await
-//         //             .expect("Couldn't send a message to the FetchActor.");
-//         //     }
-//         // }
-//         // .into_actor(self)
-//         // .spawn(ctx); // This doesn't work because of lifetimes. todo remove
-//
-//         // let _ = Box::pin(async move { self.notify(msg).await });
-//
-//         dbg!(&self.subscribers, &self.subscribers.len()); // todo remove
-//                                                           // println!("{:#?}", &self.subscribers); // todo remove
-//                                                           // let _ = Box::pin(async move {
-//         for subscriber in &self.subscribers {
-//             dbg!(subscriber);
-//             subscriber.do_send(QuoteRequestsMsg {
-//                 chunk: msg.chunk.clone(),
-//                 from: msg.from,
-//                 to: msg.to,
-//             }); // todo remove
-//                 // .send(msg.clone()) // todo remove
-//                 // .await
-//                 // .expect("Couldn't send a message to the FetchActor.");
-//         }
-//         // });
-//     }
-// }
-//
-// /// Register subscribers (listeners) - [`FetchActor`]s
-// impl Handler<SubscribeQuoteRequestsMsg> for BrokerActor {
-//     type Result = ();
-//
-//     /// Register subscribers (listeners) - [`FetchActor`]s
-//     fn handle(&mut self, msg: SubscribeQuoteRequestsMsg, _ctx: &mut Self::Context) -> Self::Result {
-//         self.subscribers.push(msg.0);
-//         dbg!(&self.subscribers, &self.subscribers.len()); // todo remove
-//     }
-// }
-
-//
-// *** The "FetchActor" ***
-//
-
-// /// Subscribe to the [`QuoteRequestsMsg`] event
-// #[derive(Message, Debug)]
-// #[rtype(result = "()")]
-// pub struct SubscribeQuoteRequestsMsg(pub Recipient<QuoteRequestsMsg>);
 
 /// The [`QuoteRequestsMsg`] message
 ///
@@ -157,18 +34,6 @@ pub struct QuoteRequestsMsg {
 /// It provides [`SymbolsClosesMsg`] event subscriptions.
 #[derive(Debug)]
 pub struct FetchActor;
-// {
-//     subscribers: Vec<Recipient<SymbolsClosesMsg>>,
-// }
-
-// impl FetchActor {
-//     /// Initialize `subscribers` with empty vector
-//     pub fn new() -> Self {
-//         Self {
-//             subscribers: vec![],
-//         }
-//     }
-// }
 
 impl Actor for FetchActor {
     type Context = Context<Self>;
@@ -212,10 +77,20 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         let provider = yahoo::YahooConnector::new();
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
+        println!("FetchActor::handle() 1"); // EXECUTED!
 
-        let x = Box::pin(async move {
+        // We add this here only for debugging. It works - the message is sent.
+        let symbols_closes_msg = SymbolsClosesMsg {
+            symbols_closes: symbols_closes.clone(),
+            from,
+        };
+        self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
+
+        // async move { // This doesn't build because of lifetimes. todo
+        let _ = Box::pin(async move {
             // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
-            // async move { // This doesn't build because of lifetimes. todo
+            println!("FetchActor::handle() 2"); // NOT EXECUTED!
+
             for symbol in symbols {
                 let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
                     Ok(closes) => closes,
@@ -245,29 +120,8 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
             // }
             // .into_actor(self)
             // .spawn(ctx); // This doesn't build because of lifetimes. todo
-        x
     }
 }
-
-// /// Register subscribers (listeners) - [`ProcessorActor`]s
-// impl Handler<SubscribeSymbolsClosesMsg> for FetchActor {
-//     type Result = ();
-//
-//     /// Register subscribers (listeners) - [`ProcessorActor`]s
-//     fn handle(&mut self, msg: SubscribeSymbolsClosesMsg, _ctx: &mut Self::Context) -> Self::Result {
-//         self.subscribers.push(msg.0);
-//         dbg!(&self.subscribers, &self.subscribers.len()); // todo remove
-//     }
-// }
-
-//
-// *** The "ProcessorActor" ***
-//
-
-// /// Subscribe to the [`SymbolsClosesMsg`] event
-// #[derive(Message, Debug)]
-// #[rtype(result = "()")]
-// pub struct SubscribeSymbolsClosesMsg(pub Recipient<SymbolsClosesMsg>);
 
 /// The [`SymbolsClosesMsg`] message
 ///
@@ -290,17 +144,6 @@ pub struct SymbolsClosesMsg {
 /// It provides [`PerformanceIndicatorsRowsMsg`] event subscriptions.
 #[derive(Debug)]
 pub struct ProcessorActor;
-// {
-//     subscribers: Vec<Recipient<PerformanceIndicatorsRowsMsg>>,
-// }
-//
-// impl ProcessorActor {
-//     pub fn new() -> Self {
-//         Self {
-//             subscribers: vec![],
-//         }
-//     }
-// }
 
 impl Actor for ProcessorActor {
     type Context = Context<Self>;
@@ -327,13 +170,18 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
 
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
 
-        // let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
-
-        // let _ = Box::pin(async move {
-
         let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
-        async {
-            // It doesn't go inside the block!
+        println!("ProcessorActor::handle() 1"); // NOT EXECUTED, unless we add the debugging part!
+
+        // We add this here only for debugging. It works - the message is sent.
+        let perf_ind_msg = PerformanceIndicatorsRowsMsg {
+            from: from.clone(),
+            rows: rows.clone(),
+        };
+        self.issue_async::<SystemBroker, PerformanceIndicatorsRowsMsg>(perf_ind_msg);
+
+        let _ = Box::pin(async move {
+            println!("ProcessorActor::handle() 2"); // NOT EXECUTED!
             for symbol_closes in symbols_closes {
                 let symbol = symbol_closes.0;
                 let closes = symbol_closes.1;
@@ -375,45 +223,17 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
                 }
             }
 
-            // let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
+            let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
 
             // Asynchronously issue a message to any subscribers on the system (global) broker
             // self.issue_system_async(perf_ind_msg);
-            // self.issue_async::<SystemBroker, PerformanceIndicatorsRowsMsg>(perf_ind_msg);
-        }
-        .into_actor(self);
-        // });
-        // .into_actor(self)
-        // .spawn(ctx); // This doesn't work because of lifetimes. todo remove
-
-        let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
-        self.issue_async::<SystemBroker, PerformanceIndicatorsRowsMsg>(perf_ind_msg);
+            self.issue_async::<SystemBroker, PerformanceIndicatorsRowsMsg>(perf_ind_msg);
+        }); // Box::pin(...) doesn't do anything!
+            // }
+            // .into_actor(self)
+            // .spawn(ctx); // This doesn't work because of lifetimes. todo remove
     }
 }
-
-// /// Register subscribers (listeners) - [`WriterActor`]s
-// impl Handler<SubscribePerformanceIndicatorsRowsMsg> for ProcessorActor {
-//     type Result = ();
-//
-//     /// Register subscribers (listeners) - [`WriterActor`]s
-//     fn handle(
-//         &mut self,
-//         msg: SubscribePerformanceIndicatorsRowsMsg,
-//         _ctx: &mut Self::Context,
-//     ) -> Self::Result {
-//         self.subscribers.push(msg.0);
-//         dbg!(&self.subscribers, &self.subscribers.len()); // todo remove
-//     }
-// }
-
-//
-// *** The "WriterActor" ***
-//
-
-// /// Subscribe to the [`PerformanceIndicatorsRowsMsg`] event
-// #[derive(Message, Debug)]
-// #[rtype(result = "()")]
-// pub struct SubscribePerformanceIndicatorsRowsMsg(pub Recipient<PerformanceIndicatorsRowsMsg>);
 
 /// A single row of calculated performance indicators for a symbol
 #[derive(Clone, Debug)]
@@ -497,6 +317,8 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
     ) -> Self::Result {
         let from = msg.from;
         let rows = msg.rows;
+
+        println!("WriterActor::handle() 1"); // NOT EXECUTED, unless we add the debugging part!
 
         if let Some(file) = &mut self.writer {
             for row in rows {

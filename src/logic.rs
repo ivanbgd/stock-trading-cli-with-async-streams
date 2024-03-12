@@ -93,6 +93,7 @@ pub fn main_loop() -> Result<(), actix::MailboxError> {
         // BrokerActor::new().start();
         FetchActor.start();
         ProcessorActor.start();
+        ProcessorActor.start(); // Two ProcessorActors are started, and one WriterActor, but both ProcessorActors send a message to the single WriterActor, so it runs twice!
         WriterActor::new().start();
 
         let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
