@@ -1,12 +1,10 @@
-use std::borrow::Borrow;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::rc::Rc;
 
-use actix::prelude::*;
-use actix_broker::{BrokerIssue, BrokerSubscribe, SystemBroker};
+use actix::{
+    Actor, ActorContext, Addr, Context, ContextFutureSpawner, Handler, Message, WrapFuture,
+};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -14,59 +12,38 @@ use yahoo_finance_api as yahoo;
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
-type _BrokerType = SystemBroker;
-
 /// The [`QuoteRequestsMsg`] message
 ///
 /// It contains a `chunk` of symbols, and `from` and `to` fields.
 ///
+/// It also contains a [`WriterActor`] address.
+///
 /// There is no expected response.
-#[derive(Message, Clone, Debug)]
+#[derive(Message)]
 #[rtype(result = "()")]
 pub struct QuoteRequestsMsg {
     pub chunk: Vec<String>,
     pub from: OffsetDateTime,
     pub to: OffsetDateTime,
+    pub writer_address: Addr<WriterActor>,
 }
 
 /// Actor that downloads stock data for a specified symbol and period
 ///
-/// This actor is a Subscriber. It subscribes to the [`QuoteRequestsMsg`] messages (events).
-///
-/// This actor is also a Publisher. It publishes [`SymbolsClosesMsg`] for the [`ProcessorActor`]s.
-/// It provides [`SymbolsClosesMsg`] event subscriptions.
-#[derive(Debug)]
-// pub struct FetchActor;
-pub struct FetchActor(pub Rc<RefCell<HashMap<String, Vec<f64>>>>);
+/// It is stateless - it doesn't contain any user data.
+pub struct FetchActor;
 
 impl Actor for FetchActor {
     type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        // Asynchronously subscribe to a message on the system (global) broker
-        self.subscribe_system_async::<QuoteRequestsMsg>(ctx);
-
-        // Asynchronously issue a message to any subscribers on the system (global) broker
-        // self.issue_system_async(SymbolsClosesMsg);
-
-        // Synchronously subscribe to a message on the arbiter (local) broker
-        // self.subscribe_arbiter_sync::<QuoteRequestsMsg>(ctx);
-
-        // // Synchronously issue a message to any subscribers on the arbiter (local) broker
-        // self.issue_arbiter_sync(SymbolsClosesMsg, ctx);
-
-        println!("FetchActor is started.");
-    }
 }
 
 /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
 impl Handler<QuoteRequestsMsg> for FetchActor {
-    // type Result = ();
-    type Result = ResponseFuture<()>;
+    type Result = ();
 
     /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
     ///
-    /// Spawns a new [`ProcessorActor`] and sends it a [`SymbolsClosesMsg`] message. // todo check
+    /// Spawns a new [`ProcessorActor`] and sends it a [`SymbolsClosesMsg`] message.
     ///
     /// The message contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol
     /// in case there was no error when fetching the data, or an empty vector in case of an error,
@@ -78,77 +55,40 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         let symbols = msg.chunk;
         let from = msg.from;
         let to = msg.to;
+        let writer_address = msg.writer_address;
 
         let provider = yahoo::YahooConnector::new();
 
-        // let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
-        println!("FetchActor::handle() 1"); // EXECUTED!
+        let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
 
-        // // We add this here only for debugging. It works - the message is sent.
-        // let symbols_closes_msg = SymbolsClosesMsg {
-        //     symbols_closes: symbols_closes.clone(),
-        //     from,
-        // };
-        // self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
-
-        let symbols_closes = self.0.clone();
-        // let symbols_closes = self.0.borrow_mut();
-
-        Box::pin(async move {
-            // This doesn't build because of lifetimes. todo
-            // let _ = Box::pin(async move {
-            // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
-            println!("FetchActor::handle() 2"); // WOULD EXECUTE...
-
-            let mut symbols_closes = symbols_closes.borrow_mut();
-            {
-                for symbol in symbols {
-                    let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
-                        Ok(closes) => closes,
-                        Err(err) => {
-                            println!(
+        async move {
+            for symbol in symbols {
+                let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
+                    Ok(closes) => closes,
+                    Err(err) => {
+                        println!(
                             "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
                             skipping the symbol.",
                             err, symbol
                         );
-                            vec![]
-                        }
-                    };
+                        vec![]
+                    }
+                };
 
-                    // (*symbols_closes).insert(symbol, closes);
-                    symbols_closes.insert(symbol, closes);
-                }
+                symbols_closes.insert(symbol, closes);
             }
 
-            let symbols_closes_msg = SymbolsClosesMsg {
-                // symbols_closes,
-                symbols_closes: **symbols_closes.borrow(), // error[E0507]: cannot move out of dereference of `Ref<'_, HashMap<std::string::String, Vec<f64>>>`
-                //              ^^^^^^^^^^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
-                from,
-            };
+            let symbols_closes_msg = SymbolsClosesMsg { symbols_closes, from, writer_address };
 
-            // Asynchronously issue a message to any subscribers on the system (global) broker
-            self.issue_system_async(symbols_closes_msg);
-            // self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
-            // (*symbols_closes).issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
-            // self.issue_async::<SystemBroker, _>(symbols_closes_msg);
-
-            // self.issue_system_sync(symbols_closes_msg, ctx);
-        }) // This doesn't build!
-           // lifetime may not live long enough; returning this value requires that `'1` must outlive `'static`
-           // }
-           // .into_actor(self)
-           // .spawn(ctx); // This doesn't build because of lifetimes. todo
-
-        // let symbols_closes_msg = SymbolsClosesMsg {
-        //     // symbols_closes: *((*symbols_closes).borrow().deref()), // doesn't compile
-        //     symbols_closes: *(symbols_closes.borrow()), // doesn't compile
-        //     //              ^^^^^^^^^^^^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
-        //     from,
-        // };
-        // self.issue_system_async(symbols_closes_msg)
-
-        // self.issue_system_sync(symbols_closes_msg, ctx);
+            // Spawn another Actor and send it the message.
+            let proc_address = ProcessorActor.start();
+            let _ = proc_address
+                .send(symbols_closes_msg)
+                .await
+                .expect("Couldn't send a message to the ProcessorActor.");
+        }
+            .into_actor(self)
+            .spawn(ctx);
     }
 }
 
@@ -157,32 +97,22 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 /// It contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol,
 /// and the starting date and time `from` field.
 ///
+/// It also contains a [`WriterActor`] address.
+///
 /// There is no expected response.
-#[derive(Message, Clone, Debug)]
+#[derive(Message)]
 #[rtype(result = "()")]
 pub struct SymbolsClosesMsg {
     pub symbols_closes: HashMap<String, Vec<f64>>,
     pub from: OffsetDateTime,
+    pub writer_address: Addr<WriterActor>,
 }
 
 /// Actor for creating performance indicators from fetched stock data
-///
-/// This actor is a Subscriber. It subscribes to the [`SymbolsClosesMsg`] messages (events).
-///
-/// This actor is also a Publisher. It publishes [`PerformanceIndicatorsRowsMsg`] for the [`WriterActor`]s.
-/// It provides [`PerformanceIndicatorsRowsMsg`] event subscriptions.
-#[derive(Debug)]
-pub struct ProcessorActor;
+struct ProcessorActor;
 
 impl Actor for ProcessorActor {
     type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        // Asynchronously subscribe to a message on the system (global) broker
-        self.subscribe_system_async::<SymbolsClosesMsg>(ctx);
-
-        println!("ProcessorActor is started.");
-    }
 }
 
 /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
@@ -191,26 +121,18 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
 
     /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
     ///
-    /// Sends a [`PerformanceIndicatorsRowsMsg`] message to the [`WriterActor`], // todo check
-    /// whose address it gets from the [`SymbolsClosesMsg`] message. // todo check
-    fn handle(&mut self, msg: SymbolsClosesMsg, _ctx: &mut Self::Context) -> Self::Result {
+    /// Sends a [`PerformanceIndicatorsRowsMsg`] message to the [`WriterActor`],
+    /// whose address it gets from the [`SymbolsClosesMsg`] message.
+    fn handle(&mut self, msg: SymbolsClosesMsg, ctx: &mut Self::Context) -> Self::Result {
         let symbols_closes = msg.symbols_closes;
         let from = msg.from;
+        let writer_address = msg.writer_address;
 
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
 
-        let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
-        println!("ProcessorActor::handle() 1"); // NOT EXECUTED, unless we add the debugging part!
+        async move {
+            let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
 
-        // We add this here only for debugging. It works - the message is sent.
-        let perf_ind_msg = PerformanceIndicatorsRowsMsg {
-            from: from.clone(),
-            rows: rows.clone(),
-        };
-        self.issue_async::<SystemBroker, PerformanceIndicatorsRowsMsg>(perf_ind_msg);
-
-        let _ = Box::pin(async move {
-            println!("ProcessorActor::handle() 2"); // NOT EXECUTED!
             for symbol_closes in symbols_closes {
                 let symbol = symbol_closes.0;
                 let closes = symbol_closes.1;
@@ -254,18 +176,18 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
 
             let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
 
-            // Asynchronously issue a message to any subscribers on the system (global) broker
-            // self.issue_system_async(perf_ind_msg);
-            self.issue_async::<SystemBroker, PerformanceIndicatorsRowsMsg>(perf_ind_msg);
-        }); // Box::pin(...) doesn't do anything!
-            // }
-            // .into_actor(self)
-            // .spawn(ctx); // This doesn't work because of lifetimes. todo remove
+            // Send the message to the single writer actor.
+            let _ = writer_address
+                .send(perf_ind_msg)
+                .await
+                .expect("Couldn't send a message to the WriterActor.");
+        }
+        .into_actor(self)
+        .spawn(ctx);
     }
 }
 
 /// A single row of calculated performance indicators for a symbol
-#[derive(Clone, Debug)]
 pub struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
@@ -281,7 +203,7 @@ pub struct PerformanceIndicatorsRow {
 /// and calculated performance indicators for a chunk of symbols.
 ///
 /// There is no expected response.
-#[derive(Message, Clone, Debug)]
+#[derive(Message)]
 #[rtype(result = "()")]
 pub struct PerformanceIndicatorsRowsMsg {
     pub from: String,
@@ -289,11 +211,6 @@ pub struct PerformanceIndicatorsRowsMsg {
 }
 
 /// Actor for writing calculated performance indicators for fetched stock data into a CSV file
-///
-/// This actor is a Subscriber. It subscribes to the [`PerformanceIndicatorsRowsMsg`] messages (events).
-///
-/// This actor is **not** a Publisher.
-#[derive(Debug)]
 pub struct WriterActor {
     pub file_name: String,
     pub writer: Option<BufWriter<File>>,
@@ -310,6 +227,7 @@ impl WriterActor {
 
 impl Actor for WriterActor {
     type Context = Context<Self>;
+    // type Context = SyncContext<Self>; todo remove
 
     fn started(&mut self, ctx: &mut Self::Context) {
         ctx.set_mailbox_capacity(16); // Default capacity is 16 messages.
@@ -317,10 +235,6 @@ impl Actor for WriterActor {
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
-
-        // Asynchronously subscribe to a message on the system (global) broker
-        self.subscribe_system_async::<PerformanceIndicatorsRowsMsg>(ctx);
-
         println!("WriterActor is started.");
     }
 
@@ -347,8 +261,6 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
         let from = msg.from;
         let rows = msg.rows;
 
-        println!("WriterActor::handle() 1"); // NOT EXECUTED, unless we add the debugging part!
-
         if let Some(file) = &mut self.writer {
             for row in rows {
                 let _ = writeln!(
@@ -368,10 +280,6 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
         }
     }
 }
-
-//
-// *** Helper Function(s) ***
-//
 
 /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
 ///
