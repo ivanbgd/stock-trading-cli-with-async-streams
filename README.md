@@ -41,7 +41,8 @@ pricing data and calculate key financial metrics in real time.
         - with two actors: the data-fetching one and the one that combines data processing and printing of results,
         - with three actors: one for data-fetching, one for data-processing and printing to console, and one for writing
           results to a `CSV` file,
-        - with `async/await` combined with `Actors`,
+        - with the Publisher/Subscriber model for Actors,
+        - with `async/await` combined with Actors,
         - with single-threaded implementation,
         - with multithreaded implementation (with various libraries),
         - with various combinations of the above.
@@ -206,7 +207,7 @@ pricing data and calculate key financial metrics in real time.
         - We do this in case the `WriterActor` also works with *chunks*.
     - All 503 rows do get printed to `stdout` regardless of the `WriterActor`, as the output to console is handled by
       the `ProcessorActor`.
-- **[WIP]**: We experimented with the Publisher/Subscriber model with the `Actix` framework, to get a feel of it.
+- We experimented with the Publisher/Subscriber model with the `Actix` framework, to get a feel of it.
     - The Publisher/Subscriber model is generally better suited to applications that have a number of different
       instances of the same actor, and they should all get the message, or where there are different types of subscriber
       actors which should all receive the message, i.e., be notified of it.
