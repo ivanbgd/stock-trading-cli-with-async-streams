@@ -99,34 +99,36 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
             // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
             println!("FetchActor::handle() 2"); // WOULD EXECUTE...
 
-            let mut symbols_closes = symbols_closes.borrow_mut();
+            {
+                let mut symbols_closes = symbols_closes.borrow_mut();
 
-            for symbol in symbols {
-                let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
-                    Ok(closes) => closes,
-                    Err(err) => {
-                        println!(
+                for symbol in symbols {
+                    let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
+                        Ok(closes) => closes,
+                        Err(err) => {
+                            println!(
                             "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
                             skipping the symbol.",
                             err, symbol
                         );
-                        vec![]
-                    }
-                };
+                            vec![]
+                        }
+                    };
 
-                // (*symbols_closes).insert(symbol, closes);
-                symbols_closes.insert(symbol, closes);
+                    // (*symbols_closes).insert(symbol, closes);
+                    symbols_closes.insert(symbol, closes);
+                }
             }
 
             let symbols_closes_msg = SymbolsClosesMsg {
                 // symbols_closes,
-                symbols_closes: *symbols_closes, // error[E0507]: cannot move out of dereference of `RefMut<'_, HashMap<std::string::String, Vec<f64>>>`
-                //              ^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
+                symbols_closes: *symbols_closes.borrow(), // error[E0507]: cannot move out of dereference of `Ref<'_, HashMap<std::string::String, Vec<f64>>>`
+                //              ^^^^^^^^^^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
                 from,
             };
 
             // Asynchronously issue a message to any subscribers on the system (global) broker
-            // self.issue_system_async(symbols_closes_msg);
+            self.issue_system_async(symbols_closes_msg);
             // self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
             // (*symbols_closes).issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
             // self.issue_async::<SystemBroker, _>(symbols_closes_msg);
