@@ -1,6 +1,9 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::ops::Deref;
+use std::rc::Rc;
 
 use actix::prelude::*;
 use actix_broker::{BrokerIssue, BrokerSubscribe, SystemBroker};
@@ -33,7 +36,8 @@ pub struct QuoteRequestsMsg {
 /// This actor is also a Publisher. It publishes [`SymbolsClosesMsg`] for the [`ProcessorActor`]s.
 /// It provides [`SymbolsClosesMsg`] event subscriptions.
 #[derive(Debug)]
-pub struct FetchActor;
+// pub struct FetchActor;
+pub struct FetchActor(pub Rc<RefCell<HashMap<String, Vec<f64>>>>);
 
 impl Actor for FetchActor {
     type Context = Context<Self>;
@@ -76,20 +80,24 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
         let provider = yahoo::YahooConnector::new();
 
-        let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
+        // let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
         println!("FetchActor::handle() 1"); // EXECUTED!
 
-        // We add this here only for debugging. It works - the message is sent.
-        let symbols_closes_msg = SymbolsClosesMsg {
-            symbols_closes: symbols_closes.clone(),
-            from,
-        };
-        self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
+        // // We add this here only for debugging. It works - the message is sent.
+        // let symbols_closes_msg = SymbolsClosesMsg {
+        //     symbols_closes: symbols_closes.clone(),
+        //     from,
+        // };
+        // self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
 
-        // async move { // This doesn't build because of lifetimes. todo
-        let _ = Box::pin(async move {
+        let symbols_closes = self.0.clone();
+
+        async move { // This doesn't build because of lifetimes. todo
+        // let _ = Box::pin(async move {
             // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
             println!("FetchActor::handle() 2"); // NOT EXECUTED!
+
+            let mut borrowed = symbols_closes.borrow_mut();
 
             for symbol in symbols {
                 let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
@@ -104,22 +112,36 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
                     }
                 };
 
-                symbols_closes.insert(symbol, closes);
+                (*borrowed).insert(symbol, closes);
+                // symbols_closes.insert(symbol, closes);
             }
 
-            let symbols_closes_msg = SymbolsClosesMsg {
-                symbols_closes,
-                from,
-            };
+            // let symbols_closes_msg = SymbolsClosesMsg {
+            //     symbols_closes,
+            //     symbols_closes: *borrowed,
+            //     from,
+            // };
+
 
             // Asynchronously issue a message to any subscribers on the system (global) broker
             // self.issue_system_async(symbols_closes_msg);
-            self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
+            // self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
+            // (*borrowed).issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
             // self.issue_async::<SystemBroker, _>(symbols_closes_msg);
-        }); // This builds, but yields no output. todo
-            // }
-            // .into_actor(self)
-            // .spawn(ctx); // This doesn't build because of lifetimes. todo
+
+            // self.issue_system_sync(symbols_closes_msg, ctx);
+        // }); // This builds, but yields no output. todo
+        }
+        .into_actor(self)
+        .spawn(ctx); // This doesn't build because of lifetimes. todo
+
+        let symbols_closes_msg = SymbolsClosesMsg {
+            symbols_closes: *((*symbols_closes).borrow().deref()),
+            from,
+        };
+        self.issue_system_async(symbols_closes_msg);
+
+        // self.issue_system_sync(symbols_closes_msg, ctx);
     }
 }
 
