@@ -60,7 +60,8 @@ impl Actor for FetchActor {
 
 /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
 impl Handler<QuoteRequestsMsg> for FetchActor {
-    type Result = ();
+    // type Result = ();
+    type Result = ResponseFuture<()>;
 
     /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
     ///
@@ -90,13 +91,15 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         // self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
 
         let symbols_closes = self.0.clone();
+        // let symbols_closes = self.0.borrow_mut();
 
-        async move { // This doesn't build because of lifetimes. todo
-        // let _ = Box::pin(async move {
+        Box::pin(async move {
+            // This doesn't build because of lifetimes. todo
+            // let _ = Box::pin(async move {
             // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
-            println!("FetchActor::handle() 2"); // NOT EXECUTED!
+            println!("FetchActor::handle() 2"); // EXECUTES! But, I can't send the message to the next actor!
 
-            let mut borrowed = symbols_closes.borrow_mut();
+            let mut symbols_closes = symbols_closes.borrow_mut();
 
             for symbol in symbols {
                 let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
@@ -111,36 +114,35 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
                     }
                 };
 
-                (*borrowed).insert(symbol, closes);
-                // symbols_closes.insert(symbol, closes);
+                // (*symbols_closes).insert(symbol, closes);
+                symbols_closes.insert(symbol, closes);
             }
 
             // let symbols_closes_msg = SymbolsClosesMsg {
-            //     symbols_closes,
-            //     symbols_closes: *borrowed,
+            //     // symbols_closes,
+            //     symbols_closes: (*symbols_closes).clone(),
             //     from,
             // };
-
 
             // Asynchronously issue a message to any subscribers on the system (global) broker
             // self.issue_system_async(symbols_closes_msg);
             // self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
-            // (*borrowed).issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
+            // (*symbols_closes).issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
             // self.issue_async::<SystemBroker, _>(symbols_closes_msg);
 
             // self.issue_system_sync(symbols_closes_msg, ctx);
-        // }); // This builds, but yields no output. todo
-        }
-        .into_actor(self)
-        .spawn(ctx); // This doesn't build because of lifetimes. todo
+        }) // This builds, but yields no output. todo
+           // }
+           // .into_actor(self)
+           // .spawn(ctx); // This doesn't build because of lifetimes. todo
 
-        let symbols_closes_msg = SymbolsClosesMsg {
-            // symbols_closes: *((*symbols_closes).borrow().deref()), // doesn't compile
-            symbols_closes: *(symbols_closes.borrow()), // doesn't compile
-            //              ^^^^^^^^^^^^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
-            from,
-        };
-        self.issue_system_async(symbols_closes_msg);
+        // let symbols_closes_msg = SymbolsClosesMsg {
+        //     // symbols_closes: *((*symbols_closes).borrow().deref()), // doesn't compile
+        //     symbols_closes: *(symbols_closes.borrow()), // doesn't compile
+        //     //              ^^^^^^^^^^^^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
+        //     from,
+        // };
+        // self.issue_system_async(symbols_closes_msg)
 
         // self.issue_system_sync(symbols_closes_msg, ctx);
     }
