@@ -136,7 +136,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         .spawn(ctx); // This doesn't build because of lifetimes. todo
 
         let symbols_closes_msg = SymbolsClosesMsg {
-            symbols_closes: *((*symbols_closes).borrow().deref()),
+            symbols_closes: *((*symbols_closes).borrow().deref()), // doesn't compile
             from,
         };
         self.issue_system_async(symbols_closes_msg);
