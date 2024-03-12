@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::ops::Deref;
 use std::rc::Rc;
 
 use actix::prelude::*;
@@ -136,7 +135,9 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         .spawn(ctx); // This doesn't build because of lifetimes. todo
 
         let symbols_closes_msg = SymbolsClosesMsg {
-            symbols_closes: *((*symbols_closes).borrow().deref()), // doesn't compile
+            // symbols_closes: *((*symbols_closes).borrow().deref()), // doesn't compile
+            symbols_closes: *(symbols_closes.borrow()), // doesn't compile
+            //              ^^^^^^^^^^^^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
             from,
         };
         self.issue_system_async(symbols_closes_msg);
