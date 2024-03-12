@@ -213,7 +213,9 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
 
-        async { // It doesn't go inside the block!
+        let x = Box::pin(async move {
+            // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
+            // async move { // This doesn't build because of lifetimes. todo
             for symbol in symbols {
                 let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
                     Ok(closes) => closes,
@@ -229,46 +231,21 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
                 symbols_closes.insert(symbol, closes);
             }
-        }.into_actor(self);
 
-        let symbols_closes_msg = SymbolsClosesMsg {
-            symbols_closes,
-            from,
-        };
-        self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
+            let symbols_closes_msg = SymbolsClosesMsg {
+                symbols_closes,
+                from,
+            };
 
-        // // let _ = Box::pin(async move { // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
-        // async move { // This doesn't build because of lifetimes. todo
-        //     for symbol in symbols {
-        //         let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
-        //             Ok(closes) => closes,
-        //             Err(err) => {
-        //                 println!(
-        //                     "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
-        //                     skipping the symbol.",
-        //                     err, symbol
-        //                 );
-        //                 vec![]
-        //             }
-        //         };
-        //
-        //         symbols_closes.insert(symbol, closes);
-        //     }
-        //
-        //     let symbols_closes_msg = SymbolsClosesMsg {
-        //         symbols_closes,
-        //         from,
-        //     };
-        //
-        //     // Asynchronously issue a message to any subscribers on the system (global) broker
-        //     // self.issue_system_async(symbols_closes_msg);
-        //     self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
-        //     // self.issue_async::<SystemBroker, _>(symbols_closes_msg);
-        //  // )}; // This builds, but yields no output. todo
-        // }
-        // .into_actor(self)
-        // .spawn(ctx); // This doesn't build because of lifetimes. todo
-        //
+            // Asynchronously issue a message to any subscribers on the system (global) broker
+            // self.issue_system_async(symbols_closes_msg);
+            self.issue_async::<SystemBroker, SymbolsClosesMsg>(symbols_closes_msg);
+            // self.issue_async::<SystemBroker, _>(symbols_closes_msg);
+        }); // This builds, but yields no output. todo
+            // }
+            // .into_actor(self)
+            // .spawn(ctx); // This doesn't build because of lifetimes. todo
+        x
     }
 }
 

@@ -223,7 +223,10 @@ pricing data and calculate key financial metrics in real time.
               same type, but this doesn't seem like a Publisher/Subscriber model. They create a node from another node
               to form a ring (a full circle) of nodes, but that's not P/S.
             - The [actix-broker](https://crates.io/crates/actix-broker) crate.
+                - https://docs.rs/actix-broker/latest/actix_broker/
                 - https://github.com/actix/actix/blob/master/actix-broker/examples/basic.rs
+                - Couldn't get it to work because of `async` blocks and lifetimes
+                  ([commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/tree/e3af311363430c2c3a668025627805d9a5c8258d)).
     - Performance: N/A
 - We are using [actix](https://crates.io/crates/actix) as an Actor framework for Rust, and
   its [actix-rt](https://crates.io/crates/actix-rt) as a runtime.
