@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
@@ -99,9 +100,8 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
             // This builds, but yields no output. It doesn't enter the block! The FOR loop is NOT executed! todo
             println!("FetchActor::handle() 2"); // WOULD EXECUTE...
 
+            let mut symbols_closes = symbols_closes.borrow_mut();
             {
-                let mut symbols_closes = symbols_closes.borrow_mut();
-
                 for symbol in symbols {
                     let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
                         Ok(closes) => closes,
@@ -122,7 +122,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
             let symbols_closes_msg = SymbolsClosesMsg {
                 // symbols_closes,
-                symbols_closes: *symbols_closes.borrow(), // error[E0507]: cannot move out of dereference of `Ref<'_, HashMap<std::string::String, Vec<f64>>>`
+                symbols_closes: **symbols_closes.borrow(), // error[E0507]: cannot move out of dereference of `Ref<'_, HashMap<std::string::String, Vec<f64>>>`
                 //              ^^^^^^^^^^^^^^^^^^^^^^^^ move occurs because value has type `HashMap<std::string::String, Vec<f64>>`, which does not implement the `Copy` trait
                 from,
             };
