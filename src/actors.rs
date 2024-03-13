@@ -102,7 +102,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 /// There is no expected response.
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct SymbolsClosesMsg {
+struct SymbolsClosesMsg {
     pub symbols_closes: HashMap<String, Vec<f64>>,
     pub from: OffsetDateTime,
     pub writer_address: Addr<WriterActor>,
@@ -188,7 +188,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
 }
 
 /// A single row of calculated performance indicators for a symbol
-pub struct PerformanceIndicatorsRow {
+struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
     pub pct_change: f64,
@@ -205,7 +205,7 @@ pub struct PerformanceIndicatorsRow {
 /// There is no expected response.
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct PerformanceIndicatorsRowsMsg {
+struct PerformanceIndicatorsRowsMsg {
     pub from: String,
     pub rows: Vec<PerformanceIndicatorsRow>,
 }

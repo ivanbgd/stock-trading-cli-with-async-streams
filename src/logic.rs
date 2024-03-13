@@ -81,7 +81,8 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    let my_actor = MyActorHandle::new();
+    // let actor_handle = ActorHandle::new();
+    let actor_handle = ActorHandle::new();
 
     while let Some(_) = interval.next().await {
         // TODO: uncomment
