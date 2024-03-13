@@ -1,7 +1,6 @@
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use actix::Actor;
 // use actix::{Actor, SyncArbiter};
 use actix_rt::System;
 // use async_std::stream::{self, StreamExt};
@@ -11,10 +10,10 @@ use clap::Parser;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::actors::{FetchActor, QuoteRequestsMsg, WriterActor};
 // use crate::actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
+use crate::my_actors::MyActorHandle;
 
 /// **The main loop**
 ///
@@ -70,17 +69,19 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     //     writer: None,
     // });
 
-    // We need to ensure that we have one and only one `WriterActor` - a singleton.
-    // This is because it writes to a file, and writing to a shared object,
-    // such as a file, needs to be synchronized, i.e., sequential.
-    // We generally don't use low-level synchronization primitives such as
-    // locks, mutexes, and similar when working with Actors.
-    // Actors have mailboxes and process messages that they receive one at a time,
-    // i.e., sequentially, and hence we can accomplish synchronization implicitly
-    // by using a single writer actor.
-    let writer_address = WriterActor::new().start();
+    // // We need to ensure that we have one and only one `WriterActor` - a singleton.
+    // // This is because it writes to a file, and writing to a shared object,
+    // // such as a file, needs to be synchronized, i.e., sequential.
+    // // We generally don't use low-level synchronization primitives such as
+    // // locks, mutexes, and similar when working with Actors.
+    // // Actors have mailboxes and process messages that they receive one at a time,
+    // // i.e., sequentially, and hence we can accomplish synchronization implicitly
+    // // by using a single writer actor.
+    // let writer_address = WriterActor::new().start();
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+
+    let handle = MyActorHandle::new();
 
     while let Some(_) = interval.next().await {
         // TODO: uncomment
@@ -101,23 +102,26 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
         // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
 
-        // We start multiple `FetchActor`s - one per chunk of symbols,
-        // and they will start the next Actor in the process - one each.
-        // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
-        for chunk in chunks_of_symbols.clone() {
-            let fetch_address = FetchActor.start();
+        // // We start multiple `FetchActor`s - one per chunk of symbols,
+        // // and they will start the next Actor in the process - one each.
+        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+        // // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
+        // for chunk in chunks_of_symbols.clone() {
+        //     let fetch_address = FetchActor.start();
+        //
+        //     let _ = fetch_address
+        //         .send(QuoteRequestsMsg {
+        //             chunk: chunk.into(),
+        //             from,
+        //             to,
+        //             writer_address: writer_address.clone(),
+        //         })
+        //         .await?;
+        // }
 
-            let _ = fetch_address
-                .send(QuoteRequestsMsg {
-                    chunk: chunk.into(),
-                    from,
-                    to,
-                    writer_address: writer_address.clone(),
-                })
-                .await?;
-        }
+        let id = handle.get_unique_id().await;
+        println!("ID = {}", id);
 
         // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
         // // It is not much faster (if at all) than the above solution without rayon.
