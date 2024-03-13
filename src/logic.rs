@@ -81,7 +81,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    let handle = MyActorHandle::new();
+    let my_actor = MyActorHandle::new();
 
     while let Some(_) = interval.next().await {
         // TODO: uncomment
@@ -120,7 +120,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         //         .await?;
         // }
 
-        let id = handle.get_unique_id().await;
+        let id = my_actor.get_unique_id().await;
         println!("ID = {}", id);
 
         // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
