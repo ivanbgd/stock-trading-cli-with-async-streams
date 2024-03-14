@@ -2,18 +2,20 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 // use actix::{Actor, SyncArbiter};
-use actix_rt::System;
+// use actix_rt::System;
 // use async_std::stream::{self, StreamExt};
 use async_std::stream::{self, StreamExt};
 use clap::Parser;
-// use rayon::prelude::*;
-use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::my_actors::MyActorHandle;
+use crate::my_actors::{ActorHandle, ActorMessage};
+use crate::types::{MsgErrorType, MsgResponseType};
+
+// use rayon::prelude::*;
+// use rayon::prelude::*;
 
 /// **The main loop**
 ///
@@ -27,7 +29,8 @@ use crate::my_actors::MyActorHandle;
 /// which may be needed to keep the strict schedule with an async
 /// stream (that ticks every [`TICK_INTERVAL_SECS`] seconds), without
 /// having to manage threads or data structures to retrieve results.
-pub async fn main_loop() -> Result<(), actix::MailboxError> {
+// pub async fn main_loop() -> Result<(), actix::MailboxError> {
+pub async fn main_loop() -> Result<MsgResponseType, MsgErrorType> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
@@ -40,8 +43,8 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
     static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
     // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
     let symbols = SYMBOLS.get_or_init(|| symbols);
-    // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
-    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
+    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
+    // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
 
     // // let symbols: Vec<&str> = args.symbols.split(",").collect();
     // // let chunks_of_symbols = symbols.chunks(CHUNK_SIZE);
@@ -81,9 +84,6 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // let actor_handle = ActorHandle::new();
-    let actor_handle = ActorHandle::new();
-
     while let Some(_) = interval.next().await {
         // TODO: uncomment
         // todo: remove the FOR line
@@ -98,6 +98,33 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         println!("{}", CSV_HEADER);
 
         let start = Instant::now();
+
+        // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
+
+        // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
+        // This is fast! Possibly even below a second.
+
+        // We start multiple instances of `Actor` - one per chunk of symbols,
+        // and they will start the next `Actor` in the process - one each.
+        // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
+        //
+        // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+        // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+        // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
+        for chunk in chunks_of_symbols.clone() {
+            let actor_handle = ActorHandle::new();
+            let _ = actor_handle
+                .send(ActorMessage::QuoteRequestsMsg {
+                    symbols: chunk.into(),
+                    from,
+                    to,
+                    // writer_address: writer_address.clone(),
+                })
+                .await?;
+        }
+
+        // let id = actor_handle.get_unique_id().await;
+        // println!("ID = {}", id);
 
         // NEW WITH ACTORS
 
@@ -120,9 +147,6 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         //         })
         //         .await?;
         // }
-
-        let id = my_actor.get_unique_id().await;
-        println!("ID = {}", id);
 
         // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
         // // It is not much faster (if at all) than the above solution without rayon.
@@ -195,7 +219,7 @@ pub async fn main_loop() -> Result<(), actix::MailboxError> {
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
 
-    System::current().stop();
+    // System::current().stop();
 
     Ok(())
 }

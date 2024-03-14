@@ -10,4 +10,4 @@ pub const CSV_HEADER: &str = "period start,symbol,price,change %,min,max,30d avg
 
 pub const CSV_FILE_NAME: &str = "output.csv";
 
-pub const MPSC_CHANNEL_CAPACITY: usize = 16;
+pub const MPSC_CHANNEL_CAPACITY: usize = 1;

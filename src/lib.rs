@@ -4,3 +4,4 @@ pub mod constants;
 pub mod logic;
 pub mod my_actors;
 pub mod signals;
+pub mod types;
