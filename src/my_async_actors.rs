@@ -4,12 +4,12 @@ use std::io::{BufWriter, Write};
 
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
-use crate::types::MsgResponseType;
+use crate::constants::{CSV_FILE_NAME, CSV_HEADER, MPSC_CHANNEL_CAPACITY, WINDOW_SIZE};
+use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 
 // ============================================================================
 //
@@ -30,6 +30,12 @@ use crate::types::MsgResponseType;
 ///
 /// All errors are handled inside methods - they are not propagated.
 ///
+/// The [`tokio::sync::mpsc::error::SendError`] error type isn't
+/// informative; it doesn't return any useful piece of information.
+/// It returns something like `SendError{..}`, which is not very
+/// useful, and that's why we have decided to handle errors in the
+/// methods and provide our own custom messages.
+///
 /// We are keeping the message response type as example.
 /// In our use-case, in our custom solution, it is `()`.
 /// We gave it a name, an alias: `MsgResponseType`.
@@ -49,7 +55,7 @@ trait Actor<R> {
     type Msg;
 
     /// Create a new [`Actor`]
-    fn new(receiver: oneshot::Receiver<Self::Msg>) -> Self;
+    fn new(receiver: mpsc::Receiver<Self::Msg>) -> Self;
 
     /// Start the [`Actor`]
     async fn start(&mut self) {}
@@ -78,7 +84,9 @@ trait Actor<R> {
 /// The type [`Self::Msg`] represents an incoming message type.
 ///
 /// The type [`R`] represents a response message type.
-pub(crate) trait ActorHandle<R> {
+///
+/// The type [`E`] represents an error type.
+pub(crate) trait ActorHandle<R, E> {
     /// The type [`Self::Msg`] represents an incoming message type.
     type Msg;
 
@@ -93,7 +101,7 @@ pub(crate) trait ActorHandle<R> {
     fn new() -> Self;
 
     /// Send a message to an [`Actor`] instance through the [`ActorHandle`]
-    async fn send(&self, msg: Self::Msg) -> R;
+    async fn send(&self, msg: Self::Msg) -> Result<R, E>;
 }
 
 // ============================================================================
@@ -135,22 +143,22 @@ pub enum ActorMessage {
 ///
 /// It can only be created through [`UniversalActorHandle`], which is public.
 struct UniversalActor {
-    receiver: oneshot::Receiver<ActorMessage>,
+    receiver: mpsc::Receiver<ActorMessage>,
 }
 
 impl Actor<MsgResponseType> for UniversalActor {
     type Msg = ActorMessage;
 
     /// Create a new [`UniversalActor`]
-    fn new(receiver: oneshot::Receiver<ActorMessage>) -> Self {
+    fn new(receiver: mpsc::Receiver<ActorMessage>) -> Self {
         Self { receiver }
     }
 
     /// Run the [`UniversalActor`]
     async fn run(&mut self) -> MsgResponseType {
-        // while let Some(msg) = self.receiver.recv().await {
-        //     self.handle(msg).await;
-        // }
+        while let Some(msg) = self.receiver.recv().await {
+            self.handle(msg).await;
+        }
     }
 
     /// Handle the message
@@ -220,7 +228,10 @@ impl UniversalActor {
 
         // Spawn another Actor and send it the message.
         let actor_handle = UniversalActorHandle::new();
-        actor_handle.send(symbols_closes_msg).await
+        actor_handle
+            .send(symbols_closes_msg)
+            .await
+            .expect("Couldn't send a message to the ProcessorActor.");
     }
 
     /// The [`SymbolsClosesMsg`] message handler for the processor [`UniversalActor`] actor
@@ -280,7 +291,10 @@ impl UniversalActor {
         let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
 
         // Send the message to the single writer actor.
-        writer_handle.send(perf_ind_msg).await
+        writer_handle
+            .send(perf_ind_msg)
+            .await
+            .expect("Couldn't send a message to the WriterActor.");
     }
 
     /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
@@ -324,13 +338,12 @@ impl UniversalActor {
 /// of a message in the channel.
 ///
 /// We only create a single [`UniversalActor`] instance in an [`UniversalActorHandle`].
-#[derive(Clone)] // the trait bound `OneshotSender<ActorMessage>: Clone` is not satisfied [E0277]
+#[derive(Clone)]
 pub struct UniversalActorHandle {
-    sender: oneshot::Sender<ActorMessage>,
-    //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `OneshotSender<ActorMessage>`
+    sender: mpsc::Sender<ActorMessage>, // TODO: Change to oneshot. Also change error type.
 }
 
-impl ActorHandle<MsgResponseType> for UniversalActorHandle {
+impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandle {
     type Msg = ActorMessage;
 
     /// Create a new [`UniversalActorHandle`]
@@ -342,7 +355,7 @@ impl ActorHandle<MsgResponseType> for UniversalActorHandle {
     ///
     /// Panics if it can't run the actor.
     fn new() -> Self {
-        let (sender, receiver) = oneshot::channel();
+        let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
         let mut actor = UniversalActor::new(receiver);
         tokio::spawn(async move { actor.run().await });
 
@@ -350,11 +363,8 @@ impl ActorHandle<MsgResponseType> for UniversalActorHandle {
     }
 
     /// Send a message to an [`UniversalActor`] instance through the [`UniversalActorHandle`]
-    async fn send(&self, msg: ActorMessage) -> MsgResponseType {
-        // cannot move out of `self.sender` which is behind a shared reference [E0507]
-        // move occurs because `self.sender` has type `OneshotSender<ActorMessage>`, which does not implement the `Copy` trait
-        // Note: `OneshotSender::<T>::send` takes ownership of the receiver `self`, which moves `self.sender`
-        let _ = self.sender.send(msg);
+    async fn send(&self, msg: ActorMessage) -> Result<MsgResponseType, UniversalMsgErrorType> {
+        Ok(self.sender.send(msg).await?)
     }
 }
 
@@ -394,7 +404,7 @@ pub struct PerformanceIndicatorsRowsMsg {
 ///
 /// It can only be created through [`WriterActorHandle`], which is public.
 struct WriterActor {
-    receiver: oneshot::Receiver<PerformanceIndicatorsRowsMsg>,
+    receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>,
     pub file_name: String,
     pub writer: Option<BufWriter<File>>,
 }
@@ -403,7 +413,7 @@ impl Actor<MsgResponseType> for WriterActor {
     type Msg = PerformanceIndicatorsRowsMsg;
 
     /// Create a new [`WriterActor`]
-    fn new(receiver: oneshot::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
+    fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
         Self {
             receiver,
             file_name: CSV_FILE_NAME.to_string(),
@@ -430,16 +440,8 @@ impl Actor<MsgResponseType> for WriterActor {
     async fn run(&mut self) -> MsgResponseType {
         println!("WriterActor is running.");
 
-        // while let Some(msg) = self.receiver.recv().await {
-        //     self.handle(msg).await;
-        // }
-
-        // cannot move out of `self.receiver` which is behind a mutable reference [E0507]
-        // move occurs because `self.receiver` has type `tokio::sync::oneshot::Receiver<my_async_actors::PerformanceIndicatorsRowsMsg>`, which does not implement the `Copy` trait
-        // Note: `std::future::IntoFuture::into_future` takes ownership of the receiver `self`, which moves `self.receiver`
-        match self.receiver.await {
-            Ok(msg) => self.handle(msg).await,
-            Err(_) => eprintln!("The ProcessorActor sender dropped."),
+        while let Some(msg) = self.receiver.recv().await {
+            self.handle(msg).await;
         }
     }
 
@@ -500,13 +502,12 @@ impl Drop for WriterActor {
 /// of a message in the channel.
 ///
 /// We only create a single [`WriterActor`] instance in a [`WriterActorHandle`].
-#[derive(Clone)] // error[E0277]: the trait bound `OneshotSender<PerformanceIndicatorsRowsMsg>: Clone` is not satisfied
+#[derive(Clone)]
 pub struct WriterActorHandle {
-    sender: oneshot::Sender<PerformanceIndicatorsRowsMsg>,
-    //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `OneshotSender<PerformanceIndicatorsRowsMsg>`
+    sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>, // TODO: Change to oneshot. Also change error type.
 }
 
-impl ActorHandle<MsgResponseType> for WriterActorHandle {
+impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
     type Msg = PerformanceIndicatorsRowsMsg;
 
     /// Create a new [`WriterActorHandle`]
@@ -520,7 +521,7 @@ impl ActorHandle<MsgResponseType> for WriterActorHandle {
     ///
     /// Panics if it can't run the actor.
     fn new() -> Self {
-        let (sender, receiver) = oneshot::channel();
+        let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
         let mut actor = WriterActor::new(receiver);
         tokio::spawn(async move { actor.start().await });
 
@@ -528,11 +529,10 @@ impl ActorHandle<MsgResponseType> for WriterActorHandle {
     }
 
     /// Send a message to an [`WriterActor`] instance through the [`WriterActorHandle`]
-    async fn send(&self, msg: PerformanceIndicatorsRowsMsg) -> MsgResponseType {
-        // error[E0507]: cannot move out of `self.sender` which is behind a shared reference
-        let _ = self.sender.send(msg);
-        // Cannot move
-        // `self.sender` moved due to this method call
-        // move occurs because `self.sender` has type `OneshotSender<my_async_actors::PerformanceIndicatorsRowsMsg>`, which does not implement the `Copy` trait
+    async fn send(
+        &self,
+        msg: PerformanceIndicatorsRowsMsg,
+    ) -> Result<MsgResponseType, WriterMsgErrorType> {
+        Ok(self.sender.send(msg).await?)
     }
 }
