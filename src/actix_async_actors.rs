@@ -9,8 +9,8 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
+use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
-use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
 //
 //

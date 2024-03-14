@@ -10,10 +10,10 @@ use clap::Parser;
 // use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-// use crate::actors::{handle_symbol_data, WriterActor};
+// use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::my_actors::{ActorHandle, ActorMessage, WriterActorHandle};
+use crate::my_async_actors::{ActorHandle, ActorMessage, WriterActorHandle};
 use crate::types::{MsgErrorType, MsgResponseType};
 
 /// **The main loop**
@@ -28,7 +28,7 @@ use crate::types::{MsgErrorType, MsgResponseType};
 /// which may be needed to keep the strict schedule with an async
 /// stream (that ticks every [`TICK_INTERVAL_SECS`] seconds), without
 /// having to manage threads or data structures to retrieve results.
-// pub async fn main_loop() -> Result<(), actix::MailboxError> {
+// pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
 pub async fn main_loop() -> Result<MsgResponseType, MsgErrorType> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)

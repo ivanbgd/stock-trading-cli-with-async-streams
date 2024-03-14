@@ -8,8 +8,8 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 use yahoo_finance_api as yahoo;
 
+use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, MPSC_CHANNEL_CAPACITY, WINDOW_SIZE};
-use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::types::{MsgErrorType, MsgResponseType};
 
 //
@@ -433,7 +433,7 @@ impl WriterActorHandle {
         let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
         let mut actor = WriterActor::new(receiver);
         tokio::spawn(async move {
-            // actor.start().await.expect("Failed to start an actor.") // todo rm
+            // actor.start().await.expect("Failed to start a writer actor.") // todo rm
             match actor.start().await {
                 Ok(_) => (),
                 Err(err) => eprintln!("Failed to start a writer actor: \"{:#?}\"", err),
