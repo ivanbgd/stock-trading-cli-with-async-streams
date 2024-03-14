@@ -14,7 +14,6 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
-use crate::types::{MsgResponseType, UniversalMsgErrorType};
 
 /// **The main loop**
 ///
@@ -29,7 +28,7 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType};
 /// stream (that ticks every [`TICK_INTERVAL_SECS`] seconds), without
 /// having to manage threads or data structures to retrieve results.
 // pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
-pub async fn main_loop() -> Result<MsgResponseType, UniversalMsgErrorType> {
+pub async fn main_loop() {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
@@ -121,7 +120,7 @@ pub async fn main_loop() -> Result<MsgResponseType, UniversalMsgErrorType> {
                     to,
                     writer_handle: writer_handle.clone(),
                 })
-                .await?;
+                .await;
         }
 
         // // With rayon. Same speed as without rayon; fast (chunks or par_chunks don't make a difference).
@@ -236,5 +235,5 @@ pub async fn main_loop() -> Result<MsgResponseType, UniversalMsgErrorType> {
 
     // System::current().stop();
 
-    Ok(())
+    // Ok(())
 }

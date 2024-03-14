@@ -17,40 +17,67 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 //
 // ============================================================================
 
-/// A universal (general) type of actor
+/// The [`Actor`] trait describes the actor methods.
 ///
-/// It is not made public on purpose.
+/// It was not made public on purpose.
 ///
-/// It can only be created through [`ActorHandle`], which is public.
+/// An actor instance can only be created through the [`ActorHandle`]
+/// trait, which is public.
 ///
 /// The type [`Self::Msg`] represents an incoming message type.
 ///
 /// The type [`R`] represents a response message type.
 ///
-/// The type [`E`] represents an error type.
-trait Actor<R, E> {
+/// All errors are handled inside methods - they are not propagated.
+///
+/// The [`tokio::sync::mpsc::error::SendError`] error type isn't
+/// informative; it doesn't return any useful piece of information.
+/// It returns something like `SendError{..}`, which is not very
+/// useful, and that's why we have decided to handle errors in the
+/// methods and provide our own custom messages.
+///
+/// We are keeping the message response type as example.
+/// In our use-case, in our custom solution, it is `()`.
+/// We gave it a name, an alias: `MsgResponseType`.
+/// It is used on some methods.
+///
+/// It could be a different type in general case, and since the trait
+/// is generic, different Actor implementations can have different
+/// message response types.
+/// We are keeping it to make the solution a little more general, so
+/// that it can be modified easily if needed.
+///
+/// Likewise, the trait has an associated type for messages to make it
+/// more general. It could have also been a generic type, `M`, but it's
+/// a little better to have an associated type instead.
+trait Actor<R> {
     /// The type [`Self::Msg`] represents an incoming message type.
     type Msg;
 
+    /// Create a new [`Actor`]
     fn new(receiver: mpsc::Receiver<Self::Msg>) -> Self;
 
-    async fn start(&mut self) -> Result<R, E>;
+    /// Start the [`Actor`]
+    async fn start(&mut self) {}
 
-    async fn run(&mut self) -> Result<R, E>;
+    /// Run the [`Actor`]
+    async fn run(&mut self) -> R;
 
+    /// Stop the [`Actor`]
     fn stop(&mut self) {}
 
-    async fn handle(&mut self, msg: Self::Msg) -> Result<R, E>;
+    /// Handle the message
+    async fn handle(&mut self, msg: Self::Msg) -> R;
 }
 
-/// [`ActorHandle`] controls creation and execution of actors
+/// The [`ActorHandle`] controls creation and execution of actors.
 ///
 /// It can be used to create multiple instances of multiple
 /// actor types.
 ///
 /// Each handler creates a single actor instance.
 ///
-/// Actors themselves are not made public on purpose.
+/// Actors themselves were not made public on purpose.
 ///
 /// We want to create them through actor handlers.
 ///
@@ -63,8 +90,17 @@ pub(crate) trait ActorHandle<R, E> {
     /// The type [`Self::Msg`] represents an incoming message type.
     type Msg;
 
+    /// Create a new [`ActorHandle`]
+    ///
+    /// This function creates a single [`Actor`] instance,
+    /// and a MPSC channel for communicating to the actor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if it can't run the actor.
     fn new() -> Self;
 
+    /// Send a message to an [`Actor`] instance through the [`ActorHandle`]
     async fn send(&self, msg: Self::Msg) -> Result<R, E>;
 }
 
@@ -103,14 +139,14 @@ pub enum ActorMessage {
 ///
 /// It can receive and handle two message types.
 ///
-/// It is not made public on purpose.
+/// It was not made public on purpose.
 ///
 /// It can only be created through [`UniversalActorHandle`], which is public.
 struct UniversalActor {
     receiver: mpsc::Receiver<ActorMessage>,
 }
 
-impl Actor<MsgResponseType, UniversalMsgErrorType> for UniversalActor {
+impl Actor<MsgResponseType> for UniversalActor {
     type Msg = ActorMessage;
 
     /// Create a new [`UniversalActor`]
@@ -118,25 +154,15 @@ impl Actor<MsgResponseType, UniversalMsgErrorType> for UniversalActor {
         Self { receiver }
     }
 
-    /// Start the [`UniversalActor`]
-    async fn start(&mut self) -> Result<MsgResponseType, UniversalMsgErrorType> {
-        Ok(())
-    }
-
     /// Run the [`UniversalActor`]
-    async fn run(&mut self) -> Result<MsgResponseType, UniversalMsgErrorType> {
+    async fn run(&mut self) -> MsgResponseType {
         while let Some(msg) = self.receiver.recv().await {
-            self.handle(msg).await?;
+            self.handle(msg).await;
         }
-
-        Ok(())
     }
 
     /// Handle the message
-    async fn handle(
-        &mut self,
-        msg: ActorMessage,
-    ) -> Result<MsgResponseType, UniversalMsgErrorType> {
+    async fn handle(&mut self, msg: ActorMessage) -> MsgResponseType {
         match msg {
             ActorMessage::QuoteRequestsMsg {
                 symbols,
@@ -144,7 +170,7 @@ impl Actor<MsgResponseType, UniversalMsgErrorType> for UniversalActor {
                 to,
                 writer_handle,
             } => {
-                Self::handle_quote_requests_msg(symbols, from, to, writer_handle).await?;
+                Self::handle_quote_requests_msg(symbols, from, to, writer_handle).await;
             }
             ActorMessage::SymbolsClosesMsg {
                 symbols_closes,
@@ -154,8 +180,6 @@ impl Actor<MsgResponseType, UniversalMsgErrorType> for UniversalActor {
                 Self::handle_symbols_closes_msg(symbols_closes, from, writer_handle).await;
             }
         }
-
-        Ok(())
     }
 }
 
@@ -175,7 +199,7 @@ impl UniversalActor {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
-    ) -> Result<MsgResponseType, UniversalMsgErrorType> {
+    ) -> MsgResponseType {
         let provider = yahoo::YahooConnector::new();
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
@@ -204,9 +228,10 @@ impl UniversalActor {
 
         // Spawn another Actor and send it the message.
         let actor_handle = UniversalActorHandle::new();
-        actor_handle.send(symbols_closes_msg).await?;
-
-        Ok(())
+        actor_handle
+            .send(symbols_closes_msg)
+            .await
+            .expect("Couldn't send a message to the ProcessorActor.");
     }
 
     /// The [`SymbolsClosesMsg`] message handler for the processor [`UniversalActor`] actor
@@ -266,10 +291,10 @@ impl UniversalActor {
         let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
 
         // Send the message to the single writer actor.
-        match writer_handle.send(perf_ind_msg).await {
-            Ok(response) => response,
-            Err(err) => eprintln!("Couldn't send a message to the WriterActor: \"{:?}\"", err),
-        }
+        writer_handle
+            .send(perf_ind_msg)
+            .await
+            .expect("Couldn't send a message to the WriterActor.");
     }
 
     /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
@@ -332,13 +357,7 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
     fn new() -> Self {
         let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
         let mut actor = UniversalActor::new(receiver);
-        tokio::spawn(async move {
-            // actor.run().await.expect("Failed to run an actor.") // todo
-            match actor.run().await {
-                Ok(_) => (),
-                Err(err) => eprintln!("Failed to run an actor: \"{:#?}\"", err),
-            }
-        });
+        tokio::spawn(async move { actor.run().await });
 
         Self { sender }
     }
@@ -390,7 +409,7 @@ struct WriterActor {
     pub writer: Option<BufWriter<File>>,
 }
 
-impl Actor<MsgResponseType, WriterMsgErrorType> for WriterActor {
+impl Actor<MsgResponseType> for WriterActor {
     type Msg = PerformanceIndicatorsRowsMsg;
 
     /// Create a new [`WriterActor`]
@@ -405,27 +424,25 @@ impl Actor<MsgResponseType, WriterMsgErrorType> for WriterActor {
     /// Start the [`WriterActor`]
     ///
     /// This function is meant to be used directly in the [`WriterActorHandle`].
-    async fn start(&mut self) -> Result<MsgResponseType, WriterMsgErrorType> {
+    async fn start(&mut self) {
         let mut file = File::create(&self.file_name)
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
         println!("WriterActor is started.");
 
-        Ok(self.run().await?)
+        self.run().await
     }
 
     /// Run the [`WriterActor`]
     ///
     /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
-    async fn run(&mut self) -> Result<MsgResponseType, WriterMsgErrorType> {
+    async fn run(&mut self) -> MsgResponseType {
         println!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
-            self.handle(msg).await?;
+            self.handle(msg).await;
         }
-
-        Ok(())
     }
 
     /// Stop the [`WriterActor`]
@@ -442,10 +459,7 @@ impl Actor<MsgResponseType, WriterMsgErrorType> for WriterActor {
     }
 
     /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
-    async fn handle(
-        &mut self,
-        msg: PerformanceIndicatorsRowsMsg,
-    ) -> Result<MsgResponseType, WriterMsgErrorType> {
+    async fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> MsgResponseType {
         let from = msg.from;
         let rows = msg.rows;
 
@@ -466,8 +480,6 @@ impl Actor<MsgResponseType, WriterMsgErrorType> for WriterActor {
 
             file.flush().expect("Failed to flush to file. Data loss :/");
         }
-
-        Ok(())
     }
 }
 
@@ -511,13 +523,7 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
     fn new() -> Self {
         let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
         let mut actor = WriterActor::new(receiver);
-        tokio::spawn(async move {
-            // actor.start().await.expect("Failed to start a writer actor.") // todo
-            match actor.start().await {
-                Ok(_) => (),
-                Err(err) => eprintln!("Failed to start a writer actor: \"{:#?}\"", err),
-            }
-        });
+        tokio::spawn(async move { actor.start().await });
 
         Self { sender }
     }
