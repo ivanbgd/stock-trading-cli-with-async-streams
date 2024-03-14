@@ -23,13 +23,16 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 ///
 /// It can only be created through [`ActorHandle`], which is public.
 ///
-/// The type [`M`] represents an incoming message type.
+/// The type [`Self::Msg`] represents an incoming message type.
 ///
 /// The type [`R`] represents a response message type.
 ///
 /// The type [`E`] represents an error type.
-trait Actor<M, R, E> {
-    fn new(receiver: mpsc::Receiver<M>) -> Self;
+trait Actor<R, E> {
+    /// The type [`Self::Msg`] represents an incoming message type.
+    type Msg;
+
+    fn new(receiver: mpsc::Receiver<Self::Msg>) -> Self;
 
     async fn start(&mut self) -> Result<R, E>;
 
@@ -37,7 +40,7 @@ trait Actor<M, R, E> {
 
     fn stop(&mut self) {}
 
-    async fn handle(&mut self, msg: M) -> Result<R, E>;
+    async fn handle(&mut self, msg: Self::Msg) -> Result<R, E>;
 }
 
 /// [`ActorHandle`] controls creation and execution of actors
@@ -51,15 +54,18 @@ trait Actor<M, R, E> {
 ///
 /// We want to create them through actor handlers.
 ///
-/// The type [`M`] represents an incoming message type.
+/// The type [`Self::Msg`] represents an incoming message type.
 ///
 /// The type [`R`] represents a response message type.
 ///
 /// The type [`E`] represents an error type.
-pub(crate) trait ActorHandle<M, R, E> {
+pub(crate) trait ActorHandle<R, E> {
+    /// The type [`Self::Msg`] represents an incoming message type.
+    type Msg;
+
     fn new() -> Self;
 
-    async fn send(&self, msg: M) -> Result<R, E>;
+    async fn send(&self, msg: Self::Msg) -> Result<R, E>;
 }
 
 // ============================================================================
@@ -104,7 +110,9 @@ struct UniversalActor {
     receiver: mpsc::Receiver<ActorMessage>,
 }
 
-impl Actor<ActorMessage, MsgResponseType, UniversalMsgErrorType> for UniversalActor {
+impl Actor<MsgResponseType, UniversalMsgErrorType> for UniversalActor {
+    type Msg = ActorMessage;
+
     /// Create a new [`UniversalActor`]
     fn new(receiver: mpsc::Receiver<ActorMessage>) -> Self {
         Self { receiver }
@@ -310,7 +318,9 @@ pub struct UniversalActorHandle {
     sender: mpsc::Sender<ActorMessage>, // TODO: Change to oneshot. Also change error type.
 }
 
-impl ActorHandle<ActorMessage, MsgResponseType, UniversalMsgErrorType> for UniversalActorHandle {
+impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandle {
+    type Msg = ActorMessage;
+
     /// Create a new [`UniversalActorHandle`]
     ///
     /// This function creates a single [`UniversalActor`] instance,
@@ -380,7 +390,9 @@ struct WriterActor {
     pub writer: Option<BufWriter<File>>,
 }
 
-impl Actor<PerformanceIndicatorsRowsMsg, MsgResponseType, WriterMsgErrorType> for WriterActor {
+impl Actor<MsgResponseType, WriterMsgErrorType> for WriterActor {
+    type Msg = PerformanceIndicatorsRowsMsg;
+
     /// Create a new [`WriterActor`]
     fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
         Self {
@@ -483,9 +495,9 @@ pub struct WriterActorHandle {
     sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>, // TODO: Change to oneshot. Also change error type.
 }
 
-impl ActorHandle<PerformanceIndicatorsRowsMsg, MsgResponseType, WriterMsgErrorType>
-    for WriterActorHandle
-{
+impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
+    type Msg = PerformanceIndicatorsRowsMsg;
+
     /// Create a new [`WriterActorHandle`]
     ///
     /// This function creates a single [`WriterActor`] instance,
