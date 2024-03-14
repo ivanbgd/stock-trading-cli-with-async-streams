@@ -12,6 +12,12 @@ use yahoo_finance_api as yahoo;
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 use crate::signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 
+//
+//
+// [`QuoteRequestsMsg`] & [`FetchActor`]
+//
+//
+
 /// The [`QuoteRequestsMsg`] message
 ///
 /// It contains a `chunk` of symbols, and `from` and `to` fields.
@@ -35,6 +41,35 @@ pub struct FetchActor;
 
 impl Actor for FetchActor {
     type Context = Context<Self>;
+}
+
+impl FetchActor {
+    /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
+    ///
+    /// # Returns
+    /// - Vector of closing prices in case of no error, or,
+    /// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.1.0/yahoo_finance_api/enum.YahooError.html)
+    ///   in case of an error.
+    async fn fetch_closing_data(
+        symbol: &str,
+        from: OffsetDateTime,
+        to: OffsetDateTime,
+        provider: &yahoo::YahooConnector,
+    ) -> Result<Vec<f64>, yahoo::YahooError> {
+        // This function takes a single symbol.
+        // The crate that we're using doesn't contain a function that works with a chunk of symbols.
+        let yresponse = provider.get_quote_history(symbol, from, to).await?;
+
+        let mut quotes = yresponse.quotes()?;
+
+        let mut result = vec![];
+        if !quotes.is_empty() {
+            quotes.sort_by_cached_key(|k| k.timestamp);
+            result = quotes.iter().map(|q| q.adjclose).collect();
+        }
+
+        Ok(result)
+    }
 }
 
 /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
@@ -63,7 +98,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
         async move {
             for symbol in symbols {
-                let closes = match fetch_closing_data(&symbol, from, to, &provider).await {
+                let closes = match Self::fetch_closing_data(&symbol, from, to, &provider).await {
                     Ok(closes) => closes,
                     Err(err) => {
                         println!(
@@ -91,6 +126,12 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
             .spawn(ctx);
     }
 }
+
+//
+//
+// [`SymbolsClosesMsg`] & [`ProcessorActor`]
+//
+//
 
 /// The [`SymbolsClosesMsg`] message
 ///
@@ -187,6 +228,12 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
     }
 }
 
+//
+//
+// [`PerformanceIndicatorsRowsMsg`] & [`WriterActor`]
+//
+//
+
 /// A single row of calculated performance indicators for a symbol
 struct PerformanceIndicatorsRow {
     pub symbol: String,
@@ -279,31 +326,4 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
             file.flush().expect("Failed to flush to file. Data loss :/");
         }
     }
-}
-
-/// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
-///
-/// # Returns
-/// - Vector of closing prices in case of no error, or,
-/// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.1.0/yahoo_finance_api/enum.YahooError.html)
-///   in case of an error.
-async fn fetch_closing_data(
-    symbol: &str,
-    from: OffsetDateTime,
-    to: OffsetDateTime,
-    provider: &yahoo::YahooConnector,
-) -> Result<Vec<f64>, yahoo::YahooError> {
-    // This function takes a single symbol.
-    // The crate that we're using doesn't contain a function that works with a chunk of symbols.
-    let yresponse = provider.get_quote_history(symbol, from, to).await?;
-
-    let mut quotes = yresponse.quotes()?;
-
-    let mut result = vec![];
-    if !quotes.is_empty() {
-        quotes.sort_by_cached_key(|k| k.timestamp);
-        result = quotes.iter().map(|q| q.adjclose).collect();
-    }
-
-    Ok(result)
 }
