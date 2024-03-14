@@ -377,8 +377,7 @@ struct WriterActor {
     pub writer: Option<BufWriter<File>>,
 }
 
-// impl Actor<PerformanceIndicatorsRowsMsg, MsgResponseType, WriterMsgErrorType> for WriterActor {
-impl WriterActor {
+impl Actor<PerformanceIndicatorsRowsMsg, WriterMsgErrorType> for WriterActor {
     /// Create a new [`WriterActor`]
     fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
         Self {
@@ -408,7 +407,7 @@ impl WriterActor {
         println!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
-            self.handle(msg);
+            self.handle(msg).await?;
         }
 
         Ok(())
@@ -417,7 +416,7 @@ impl WriterActor {
     /// Stop the [`WriterActor`]
     ///
     /// This function is meant to be called in the [`WriterActor`]'s destructor.
-    fn stop(&mut self) {
+    fn stop(&mut self) -> Result<MsgResponseType, WriterMsgErrorType> {
         if let Some(writer) = &mut self.writer {
             writer
                 .flush()
@@ -425,10 +424,15 @@ impl WriterActor {
         };
 
         println!("WriterActor is flushed and properly stopped.");
+
+        Ok(())
     }
 
     /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
-    fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> MsgResponseType {
+    async fn handle(
+        &mut self,
+        msg: PerformanceIndicatorsRowsMsg,
+    ) -> Result<MsgResponseType, WriterMsgErrorType> {
         let from = msg.from;
         let rows = msg.rows;
 
@@ -449,12 +453,14 @@ impl WriterActor {
 
             file.flush().expect("Failed to flush to file. Data loss :/");
         }
+
+        Ok(())
     }
 }
 
 impl Drop for WriterActor {
     fn drop(&mut self) {
-        self.stop();
+        let _ = self.stop();
     }
 }
 
