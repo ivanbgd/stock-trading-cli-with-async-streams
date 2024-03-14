@@ -62,7 +62,7 @@ impl Actor {
 
     /// Run the actor
     async fn run(&mut self) -> Result<MsgResponseType, MsgErrorType> {
-        // Executes once per actor, when it finishes processing a chunk of symbols.
+        // Executes once per actor, when it starts processing a chunk of symbols.
         // It executes for each [`Actor`], for any of the two message types.
         println!("Actor is running.");
 
