@@ -98,7 +98,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
         async move {
             for symbol in symbols {
-                let closes = match Self::fetch_closing_data(&symbol, from, to, &provider).await {
+                let closes = match FetchActor::fetch_closing_data(&symbol, from, to, &provider).await {
                     Ok(closes) => closes,
                     Err(err) => {
                         println!(

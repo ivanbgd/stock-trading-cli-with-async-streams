@@ -28,21 +28,23 @@ pricing data and calculate key financial metrics in real time.
 - The data that we extract from the received data are minimum, maximum and closing prices for each requested symbol,
   along with percent change and a simple moving average as a window function (over the 30-day period).
 - As can be seen, the calculations performed are not super-intensive.
-- The goal is to experiment with:
-    - synchronous (blocking) code,
+- We are implementing **MUCH MORE** than is required of us from the project description!
+- The goal is to experiment:
+    - with single-threaded synchronous (blocking) code,
+    - with multithreaded synchronous (blocking) code,
     - with single-threaded asynchronous code,
     - with multithreaded asynchronous code,
     - with different implementations of Actors ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)):
         - with [actix](https://crates.io/crates/actix), as an Actor framework for Rust,
         - with [xactor](https://crates.io/crates/xactor), as another Actor framework for Rust,
-        - perhaps with own implementation of Actors,
+        - with **our own** asynchronous implementation of Actors,
         - with a single actor that is responsible for downloading, processing, and printing of the processed data to
           console,
         - with two actors: the data-fetching one and the one that combines data processing and printing of results,
         - with three actors: one for data-fetching, one for data-processing and printing to console, and one for writing
           results to a `CSV` file,
-        - with the Publisher/Subscriber model for Actors,
         - with `async/await` combined with Actors,
+        - with the Publisher/Subscriber model for Actors,
         - with single-threaded implementation,
         - with multithreaded implementation (with various libraries),
         - with various combinations of the above.
@@ -233,6 +235,14 @@ pricing data and calculate key financial metrics in real time.
   its [actix-rt](https://crates.io/crates/actix-rt) as a runtime.
     - *Note*: [actix-rt](https://crates.io/crates/actix-rt) is a "Tokio-based single-threaded async runtime for the
       Actix ecosystem".
+- We implemented **our own** asynchronous Actor model from scratch.
+    - We have a variant with a universal (general) actor that can receive and handle multiple message types.
+    - We have a variant of specific actors that can only process and handle a single, specific, message type.
+    - We use [Tokio](https://tokio.rs/) as asynchronous runtime.
+    - Our implementation is project-specific - a custom one.
+        - It is not general. It is not meant as a general library, but it could be generalized. It's a good starting
+          point for a general Actor Model library.
+    - Performance is excellent! It is at least as fast as our previous fastest solution, if not faster.
 
 ### The Web Service
 
@@ -338,6 +348,9 @@ TODO:     - This proved to be the fastest solution for this concrete problem.
 
 ## Potential Modifications, Improvements or Additions
 
+- Find a way to measure time correctly when working with async/await and/or with Actors.
+- Add tracing or at least logging.
+- Implement graceful stopping and shutdown after receiving `CTRL`-`C`.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
 - Find ways to publish and subscribe to messages without explicit calls.
@@ -351,5 +364,3 @@ TODO:     - This proved to be the fastest solution for this concrete problem.
       been updated in about three years. Also, `actix` is far more popular.
         - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
           [this commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/commit/d4f53a7499ef9ceee988a6e3d5d26d518e25f6eb).
-- Find a way to measure time correctly when working with async/await and/or with Actors.
-- Add tracing or at least logging.
