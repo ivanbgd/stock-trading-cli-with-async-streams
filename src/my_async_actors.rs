@@ -62,6 +62,10 @@ impl Actor {
 
     /// Run the actor
     async fn run(&mut self) -> Result<MsgResponseType, MsgErrorType> {
+        // Executes once per actor, when it finishes processing a chunk of symbols.
+        // It executes for each [`Actor`], for any of the two message types.
+        println!("Actor is running.");
+
         while let Some(msg) = self.receiver.recv().await {
             self.handle(msg).await?;
         }
@@ -229,6 +233,14 @@ impl Actor {
         }
 
         Ok(result)
+    }
+}
+
+impl Drop for Actor {
+    fn drop(&mut self) {
+        // Executes once per actor, when it finishes processing a chunk of symbols.
+        // It executes for each [`Actor`], for any of the two message types.
+        println!("Actor is stopping.");
     }
 }
 
