@@ -32,9 +32,6 @@ pub struct PerformanceIndicatorsRow {
 /// It could be used for every message type.
 /// We simply don't need it in our specific (custom) case.
 pub enum ActorMessage {
-    // GetUniqueID {
-    //     respond_to: oneshot::Sender<u32>,
-    // },
     QuoteRequestsMsg {
         symbols: Vec<String>,
         from: OffsetDateTime,
@@ -61,16 +58,12 @@ pub enum ActorMessage {
 /// It can only be created through [`ActorHandle`], which is public.
 struct Actor {
     receiver: mpsc::Receiver<ActorMessage>,
-    // next_id: u32,
 }
 
 impl Actor {
     /// Create a new actor
     fn new(receiver: mpsc::Receiver<ActorMessage>) -> Self {
-        Self {
-            receiver,
-            // next_id: 0,
-        }
+        Self { receiver }
     }
 
     /// Run the actor
@@ -85,14 +78,6 @@ impl Actor {
     /// Handle the message
     async fn handle(&mut self, msg: ActorMessage) -> Result<MsgResponseType, MsgErrorType> {
         match msg {
-            // ActorMessage::GetUniqueID { respond_to } => {
-            //     self.next_id += 1;
-            //
-            //     // The `let _ =` ignores any errors when sending.
-            //     // An error can happen if the `select!` macro is used
-            //     // to cancel waiting for the response.
-            //     let _ = respond_to.send(self.next_id);
-            // }
             ActorMessage::QuoteRequestsMsg { symbols, from, to } => {
                 Self::handle_quote_requests_msg(symbols, from, to).await?;
             }
@@ -110,7 +95,7 @@ impl Actor {
         Ok(())
     }
 
-    /// The [`QuoteRequestsMsg`] message handler for the [`Actor`] actor
+    /// The [`QuoteRequestsMsg`] message handler for the fetch [`Actor`] actor
     ///
     /// Spawns a new processor [`Actor`] and sends it a [`SymbolsClosesMsg`] message.
     ///
@@ -219,6 +204,7 @@ impl Actor {
         Ok(())
     }
 
+    /// The [`PerformanceIndicatorsRowsMsg`] message handler for the writer [`Actor`] actor
     fn handle_performance_indicators_rows_msg(
         from: String,
         rows: Vec<PerformanceIndicatorsRow>,
@@ -269,7 +255,7 @@ impl Actor {
 /// We only create a single [`Actor`] instance in an [`ActorHandle`].
 #[derive(Clone)]
 pub struct ActorHandle {
-    sender: mpsc::Sender<ActorMessage>, // TODO: Maybe change to oneshot?
+    sender: mpsc::Sender<ActorMessage>, // TODO: Change to oneshot. Also change error type.
 }
 
 impl ActorHandle {
@@ -279,6 +265,7 @@ impl ActorHandle {
     /// and a MPSC channel for communicating to the actor.
     ///
     /// # Panics
+    ///
     /// Panics if it can't run the actor.
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
@@ -292,26 +279,4 @@ impl ActorHandle {
     pub async fn send(&self, msg: ActorMessage) -> Result<MsgResponseType, MsgErrorType> {
         Ok(self.sender.send(msg).await?)
     }
-
-    // We could have an oneshot channel for sending the response back in general case.
-    // It could be used for every message type.
-    // We simply don't need it in our specific (custom) case.
-
-    // pub async fn get_unique_id(&self) -> u32 {
-    //     // Create an oneshot channel for sending the response back.
-    //     // This is not the same channel as the MPSC one.
-    //     // We use the MPSC channel to send a message to an actor.
-    //     // We pack the `send` in it, and that's this actor handler.
-    //     // That's a return address for the actor, which is a receiver.
-    //     // This actor handler is also a `recv` of the response message from the actor.
-    //     let (send, recv) = oneshot::channel();
-    //
-    //     let msg = ActorMessage::GetUniqueID { respond_to: send };
-    //
-    //     // Ignore send errors. If this sending fails, so does the
-    //     // recv.await below. There's no reason to check for the
-    //     // same failure twice.
-    //     let _ = self.sender.send(msg).await;
-    //     recv.await.expect("Actor task has been killed")
-    // }
 }
