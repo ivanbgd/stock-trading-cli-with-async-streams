@@ -5,12 +5,11 @@ use std::io::{BufWriter, Write};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::error::SendError;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, MPSC_CHANNEL_CAPACITY, WINDOW_SIZE};
-use crate::types::{MsgErrorType, MsgResponseType};
+use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 
 // ============================================================================
 //
@@ -107,14 +106,14 @@ struct UniversalActor {
     receiver: mpsc::Receiver<ActorMessage>,
 }
 
-impl Actor<ActorMessage, MsgErrorType> for UniversalActor {
+impl Actor<ActorMessage, UniversalMsgErrorType> for UniversalActor {
     /// Create a new actor
     fn new(receiver: mpsc::Receiver<ActorMessage>) -> Self {
         Self { receiver }
     }
 
     /// Run the actor
-    async fn run(&mut self) -> Result<MsgResponseType, MsgErrorType> {
+    async fn run(&mut self) -> Result<MsgResponseType, UniversalMsgErrorType> {
         while let Some(msg) = self.receiver.recv().await {
             self.handle(msg).await?;
         }
@@ -123,7 +122,10 @@ impl Actor<ActorMessage, MsgErrorType> for UniversalActor {
     }
 
     /// Handle the message
-    async fn handle(&mut self, msg: ActorMessage) -> Result<MsgResponseType, MsgErrorType> {
+    async fn handle(
+        &mut self,
+        msg: ActorMessage,
+    ) -> Result<MsgResponseType, UniversalMsgErrorType> {
         match msg {
             ActorMessage::QuoteRequestsMsg {
                 symbols,
@@ -162,7 +164,7 @@ impl UniversalActor {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
-    ) -> Result<MsgResponseType, MsgErrorType> {
+    ) -> Result<MsgResponseType, UniversalMsgErrorType> {
         let provider = yahoo::YahooConnector::new();
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
@@ -305,7 +307,7 @@ pub struct UniversalActorHandle {
     sender: mpsc::Sender<ActorMessage>, // TODO: Change to oneshot. Also change error type.
 }
 
-impl ActorHandle<ActorMessage, MsgResponseType, MsgErrorType> for UniversalActorHandle {
+impl ActorHandle<ActorMessage, MsgResponseType, UniversalMsgErrorType> for UniversalActorHandle {
     /// Create a new [`UniversalActorHandle`]
     ///
     /// This function creates a single [`UniversalActor`] instance,
@@ -318,7 +320,7 @@ impl ActorHandle<ActorMessage, MsgResponseType, MsgErrorType> for UniversalActor
         let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
         let mut actor = UniversalActor::new(receiver);
         tokio::spawn(async move {
-            // actor.run().await.expect("Failed to run an actor.") // todo rm
+            // actor.run().await.expect("Failed to run an actor.") // todo
             match actor.run().await {
                 Ok(_) => (),
                 Err(err) => eprintln!("Failed to run an actor: \"{:#?}\"", err),
@@ -329,7 +331,7 @@ impl ActorHandle<ActorMessage, MsgResponseType, MsgErrorType> for UniversalActor
     }
 
     /// Send a message to an [`UniversalActor`] instance through the [`UniversalActorHandle`]
-    async fn send(&self, msg: ActorMessage) -> Result<MsgResponseType, MsgErrorType> {
+    async fn send(&self, msg: ActorMessage) -> Result<MsgResponseType, UniversalMsgErrorType> {
         Ok(self.sender.send(msg).await?)
     }
 }
@@ -375,8 +377,7 @@ struct WriterActor {
     pub writer: Option<BufWriter<File>>,
 }
 
-// impl Actor<PerformanceIndicatorsRowsMsg, MsgResponseType, SendError<PerformanceIndicatorsRowsMsg>>
-//     for WriterActor
+// impl Actor<PerformanceIndicatorsRowsMsg, MsgResponseType, WriterMsgErrorType> for WriterActor {
 impl WriterActor {
     /// Create a new [`WriterActor`]
     fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
@@ -390,7 +391,7 @@ impl WriterActor {
     /// Start the [`WriterActor`]
     ///
     /// This function is meant to be used directly in the [`WriterActorHandle`].
-    async fn start(&mut self) -> Result<MsgResponseType, SendError<PerformanceIndicatorsRowsMsg>> {
+    async fn start(&mut self) -> Result<MsgResponseType, WriterMsgErrorType> {
         let mut file = File::create(&self.file_name)
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
@@ -403,7 +404,7 @@ impl WriterActor {
     /// Run the [`WriterActor`]
     ///
     /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
-    async fn run(&mut self) -> Result<MsgResponseType, SendError<PerformanceIndicatorsRowsMsg>> {
+    async fn run(&mut self) -> Result<MsgResponseType, WriterMsgErrorType> {
         println!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
@@ -475,12 +476,8 @@ pub struct WriterActorHandle {
     sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>, // TODO: Change to oneshot. Also change error type.
 }
 
-impl
-    ActorHandle<
-        PerformanceIndicatorsRowsMsg,
-        MsgResponseType,
-        SendError<PerformanceIndicatorsRowsMsg>,
-    > for WriterActorHandle
+impl ActorHandle<PerformanceIndicatorsRowsMsg, MsgResponseType, WriterMsgErrorType>
+    for WriterActorHandle
 {
     /// Create a new [`WriterActorHandle`]
     ///
@@ -496,7 +493,7 @@ impl
         let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
         let mut actor = WriterActor::new(receiver);
         tokio::spawn(async move {
-            // actor.start().await.expect("Failed to start a writer actor.") // todo rm
+            // actor.start().await.expect("Failed to start a writer actor.") // todo
             match actor.start().await {
                 Ok(_) => (),
                 Err(err) => eprintln!("Failed to start a writer actor: \"{:#?}\"", err),
@@ -510,7 +507,7 @@ impl
     async fn send(
         &self,
         msg: PerformanceIndicatorsRowsMsg,
-    ) -> Result<MsgResponseType, SendError<PerformanceIndicatorsRowsMsg>> {
+    ) -> Result<MsgResponseType, WriterMsgErrorType> {
         Ok(self.sender.send(msg).await?)
     }
 }

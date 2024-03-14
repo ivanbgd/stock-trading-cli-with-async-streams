@@ -14,7 +14,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
-use crate::types::{MsgErrorType, MsgResponseType};
+use crate::types::{MsgResponseType, UniversalMsgErrorType};
 
 /// **The main loop**
 ///
@@ -29,7 +29,7 @@ use crate::types::{MsgErrorType, MsgResponseType};
 /// stream (that ticks every [`TICK_INTERVAL_SECS`] seconds), without
 /// having to manage threads or data structures to retrieve results.
 // pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
-pub async fn main_loop() -> Result<MsgResponseType, MsgErrorType> {
+pub async fn main_loop() -> Result<MsgResponseType, UniversalMsgErrorType> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");

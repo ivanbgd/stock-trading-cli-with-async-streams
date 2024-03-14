@@ -1,6 +1,7 @@
 use tokio::sync::mpsc::error::SendError;
 
-use crate::my_async_actors::ActorMessage;
+use crate::my_async_actors::{ActorMessage, PerformanceIndicatorsRowsMsg};
 
 pub type MsgResponseType = ();
-pub type MsgErrorType = SendError<ActorMessage>;
+pub type UniversalMsgErrorType = SendError<ActorMessage>;
+pub type WriterMsgErrorType = SendError<PerformanceIndicatorsRowsMsg>;
