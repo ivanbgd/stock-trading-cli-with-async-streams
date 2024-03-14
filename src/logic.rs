@@ -118,7 +118,7 @@ pub async fn main_loop() {
                     symbols: chunk.into(),
                     from,
                     to,
-                    writer_handle: writer_handle.clone(),
+                    writer_handle: writer_handle.clone(), // not cloneable!
                 })
                 .await;
         }
