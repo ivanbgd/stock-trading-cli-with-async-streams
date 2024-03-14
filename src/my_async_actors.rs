@@ -25,21 +25,19 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 ///
 /// The type [`M`] represents an incoming message type.
 ///
+/// The type [`R`] represents a response message type.
+///
 /// The type [`E`] represents an error type.
-trait Actor<M, E> {
+trait Actor<M, R, E> {
     fn new(receiver: mpsc::Receiver<M>) -> Self;
 
-    async fn start(&mut self) -> Result<MsgResponseType, E> {
-        Ok(())
-    }
+    async fn start(&mut self) -> Result<R, E>;
 
-    async fn run(&mut self) -> Result<MsgResponseType, E>;
+    async fn run(&mut self) -> Result<R, E>;
 
-    fn stop(&mut self) -> Result<MsgResponseType, E> {
-        Ok(())
-    }
+    fn stop(&mut self) {}
 
-    async fn handle(&mut self, msg: M) -> Result<MsgResponseType, E>;
+    async fn handle(&mut self, msg: M) -> Result<R, E>;
 }
 
 /// [`ActorHandle`] controls creation and execution of actors
@@ -106,13 +104,18 @@ struct UniversalActor {
     receiver: mpsc::Receiver<ActorMessage>,
 }
 
-impl Actor<ActorMessage, UniversalMsgErrorType> for UniversalActor {
-    /// Create a new actor
+impl Actor<ActorMessage, MsgResponseType, UniversalMsgErrorType> for UniversalActor {
+    /// Create a new [`UniversalActor`]
     fn new(receiver: mpsc::Receiver<ActorMessage>) -> Self {
         Self { receiver }
     }
 
-    /// Run the actor
+    /// Start the [`UniversalActor`]
+    async fn start(&mut self) -> Result<MsgResponseType, UniversalMsgErrorType> {
+        Ok(())
+    }
+
+    /// Run the [`UniversalActor`]
     async fn run(&mut self) -> Result<MsgResponseType, UniversalMsgErrorType> {
         while let Some(msg) = self.receiver.recv().await {
             self.handle(msg).await?;
@@ -377,7 +380,7 @@ struct WriterActor {
     pub writer: Option<BufWriter<File>>,
 }
 
-impl Actor<PerformanceIndicatorsRowsMsg, WriterMsgErrorType> for WriterActor {
+impl Actor<PerformanceIndicatorsRowsMsg, MsgResponseType, WriterMsgErrorType> for WriterActor {
     /// Create a new [`WriterActor`]
     fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
         Self {
@@ -416,7 +419,7 @@ impl Actor<PerformanceIndicatorsRowsMsg, WriterMsgErrorType> for WriterActor {
     /// Stop the [`WriterActor`]
     ///
     /// This function is meant to be called in the [`WriterActor`]'s destructor.
-    fn stop(&mut self) -> Result<MsgResponseType, WriterMsgErrorType> {
+    fn stop(&mut self) {
         if let Some(writer) = &mut self.writer {
             writer
                 .flush()
@@ -424,8 +427,6 @@ impl Actor<PerformanceIndicatorsRowsMsg, WriterMsgErrorType> for WriterActor {
         };
 
         println!("WriterActor is flushed and properly stopped.");
-
-        Ok(())
     }
 
     /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
