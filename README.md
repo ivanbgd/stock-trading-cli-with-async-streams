@@ -353,6 +353,8 @@ TODO:     - This proved to be the fastest solution for this concrete problem.
 - Implement graceful stopping and shutdown after receiving `CTRL`-`C`.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
+- Rename "output.csv" to "<current_date_and_time_with_tz>.csv".
+    - Use RFC2822, or RFC3339, or ISO 8601 or any other format.
 - Find ways to publish and subscribe to messages without explicit calls.
     - [actix](https://crates.io/crates/actix) might support this feature through the use
       of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);

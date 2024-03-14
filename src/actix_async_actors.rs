@@ -12,11 +12,11 @@ use yahoo_finance_api as yahoo;
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 
+// ============================================================================
 //
+//                  [`QuoteRequestsMsg`] & [`FetchActor`]
 //
-// [`QuoteRequestsMsg`] & [`FetchActor`]
-//
-//
+// ============================================================================
 
 /// The [`QuoteRequestsMsg`] message
 ///
@@ -127,11 +127,11 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
     }
 }
 
+// ============================================================================
 //
+//                  [`SymbolsClosesMsg`] & [`ProcessorActor`]
 //
-// [`SymbolsClosesMsg`] & [`ProcessorActor`]
-//
-//
+// ============================================================================
 
 /// The [`SymbolsClosesMsg`] message
 ///
@@ -228,11 +228,11 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
     }
 }
 
+// ============================================================================
 //
+//             [`PerformanceIndicatorsRowsMsg`] & [`WriterActor`]
 //
-// [`PerformanceIndicatorsRowsMsg`] & [`WriterActor`]
-//
-//
+// ============================================================================
 
 /// A single row of calculated performance indicators for a symbol
 struct PerformanceIndicatorsRow {
