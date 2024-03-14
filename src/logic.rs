@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 // use async_std::stream::{self, StreamExt};
 use async_std::stream::{self, StreamExt};
 use clap::Parser;
+// use rayon::prelude::*;
+use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actors::{handle_symbol_data, WriterActor};
@@ -13,9 +15,6 @@ use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 use crate::my_actors::{ActorHandle, ActorMessage};
 use crate::types::{MsgErrorType, MsgResponseType};
-
-// use rayon::prelude::*;
-// use rayon::prelude::*;
 
 /// **The main loop**
 ///
@@ -101,30 +100,44 @@ pub async fn main_loop() -> Result<MsgResponseType, MsgErrorType> {
 
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
 
-        // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
-        // This is fast! Possibly even below a second.
-
-        // We start multiple instances of `Actor` - one per chunk of symbols,
-        // and they will start the next `Actor` in the process - one each.
-        // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
+        // // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
+        // // This is fast! Possibly even below a second.
         //
-        // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
-        for chunk in chunks_of_symbols.clone() {
-            let actor_handle = ActorHandle::new();
-            let _ = actor_handle
-                .send(ActorMessage::QuoteRequestsMsg {
-                    symbols: chunk.into(),
-                    from,
-                    to,
-                    // writer_address: writer_address.clone(),
-                })
-                .await?;
-        }
+        // // We start multiple instances of `Actor` - one per chunk of symbols,
+        // // and they will start the next `Actor` in the process - one each.
+        // // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
+        // //
+        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+        // // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
+        // for chunk in chunks_of_symbols.clone() {
+        //     let actor_handle = ActorHandle::new();
+        //     let _ = actor_handle
+        //         .send(ActorMessage::QuoteRequestsMsg {
+        //             symbols: chunk.into(),
+        //             from,
+        //             to,
+        //             // writer_address: writer_address.clone(),
+        //         })
+        //         .await?;
+        // }
 
-        // let id = actor_handle.get_unique_id().await;
-        // println!("ID = {}", id);
+        // With rayon. Same speed as without rayon; fast (chunks or par_chunks don't make a difference).
+
+        let queries: Vec<_> = chunks_of_symbols
+            .par_iter()
+            .map(|chunk| async {
+                ActorHandle::new()
+                    .send(ActorMessage::QuoteRequestsMsg {
+                        symbols: (*chunk).into(),
+                        from,
+                        to,
+                        // writer_address: writer_address.clone(),
+                    })
+                    .await
+            })
+            .collect();
+        let _ = futures::future::join_all(queries).await;
 
         // NEW WITH ACTORS
 
