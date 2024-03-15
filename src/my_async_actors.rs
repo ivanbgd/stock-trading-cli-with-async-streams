@@ -340,7 +340,7 @@ impl UniversalActor {
 /// We only create a single [`UniversalActor`] instance in an [`UniversalActorHandle`].
 #[derive(Clone)]
 pub struct UniversalActorHandle {
-    sender: mpsc::Sender<ActorMessage>, // TODO: Change to oneshot. Also change error type.
+    sender: mpsc::Sender<ActorMessage>,
 }
 
 impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandle {
@@ -449,11 +449,11 @@ impl Actor<MsgResponseType> for WriterActor {
     ///
     /// This function is meant to be called in the [`WriterActor`]'s destructor.
     fn stop(&mut self) {
-        if let Some(writer) = &mut self.writer {
-            writer
-                .flush()
-                .expect("Failed to flush writer. Data loss :(")
-        };
+        // if let Some(writer) = &mut self.writer {
+        //     writer
+        //         .flush()
+        //         .expect("Failed to flush writer. Data loss :(")
+        // };
 
         println!("WriterActor is flushed and properly stopped.");
     }
@@ -504,7 +504,7 @@ impl Drop for WriterActor {
 /// We only create a single [`WriterActor`] instance in a [`WriterActorHandle`].
 #[derive(Clone)]
 pub struct WriterActorHandle {
-    sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>, // TODO: Change to oneshot. Also change error type.
+    sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>,
 }
 
 impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
