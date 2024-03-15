@@ -24,7 +24,7 @@ async fn main() {
     }
 
     // Send the shutdown signal to application and wait for it to shut down
-    // TODO: Implement broadcasting the shutdown signal
+    // TODO: Implement broadcasting or sending the shutdown signal
 
     // Ok(())
 }
