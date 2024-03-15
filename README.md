@@ -350,7 +350,8 @@ TODO:     - This proved to be the fastest solution for this concrete problem.
 
 - Find a way to measure time correctly when working with async/await and/or with Actors.
 - Add tracing or at least logging.
-- Implement graceful stopping and shutdown after receiving `CTRL`-`C`.
+- Fully implement graceful stopping and shutdown after receiving the shutdown signal, `CTRL`-`C`.
+    - It's only partly implemented.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
 - Rename "output.csv" to "<current_date_and_time_with_tz>.csv".

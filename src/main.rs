@@ -6,22 +6,25 @@ use stock_trading_cli_with_async_streams as stock;
 async fn main() {
     println!();
 
-    // let _ = main_loop().await;
-    // main_loop().await?;
-
+    // Spawn application as a separate task
     tokio::spawn(async move {
         let _ = main_loop().await;
+        // main_loop().await?;
     });
 
+    // Await the shutdown signal
     match tokio::signal::ctrl_c().await {
         Ok(()) => {
             println!("CTRL-C received. Shutting down...");
         }
         Err(err) => {
             // We also shut down in case of error.
-            eprintln!("Unable to listen for shutdown signal: {}", err);
+            eprintln!("Unable to listen for the shutdown signal: {}", err);
         }
     }
+
+    // Send the shutdown signal to application and wait for it to shut down
+    // TODO: Implement broadcasting the shutdown signal
 
     // Ok(())
 }

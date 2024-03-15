@@ -449,11 +449,11 @@ impl Actor<MsgResponseType> for WriterActor {
     ///
     /// This function is meant to be called in the [`WriterActor`]'s destructor.
     fn stop(&mut self) {
-        // if let Some(writer) = &mut self.writer {
-        //     writer
-        //         .flush()
-        //         .expect("Failed to flush writer. Data loss :(")
-        // };
+        if let Some(writer) = &mut self.writer {
+            writer
+                .flush()
+                .expect("Failed to flush writer. Data loss :(")
+        };
 
         println!("WriterActor is flushed and properly stopped.");
     }
