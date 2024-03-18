@@ -4,4 +4,5 @@ pub mod cli;
 pub mod constants;
 pub mod logic;
 pub mod my_async_actors;
+pub mod sync_signals;
 pub mod types;
