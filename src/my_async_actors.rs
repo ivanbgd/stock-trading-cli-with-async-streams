@@ -4,11 +4,12 @@ use std::io::{BufWriter, Write};
 
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+use tokio::sync::mpsc;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
-use crate::types::MsgResponseType;
+use crate::constants::{CSV_FILE_NAME, CSV_HEADER, MPSC_CHANNEL_CAPACITY, WINDOW_SIZE};
+use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 
 // ============================================================================
 //
@@ -29,6 +30,12 @@ use crate::types::MsgResponseType;
 ///
 /// All errors are handled inside methods - they are not propagated.
 ///
+/// The [`tokio::sync::mpsc::error::SendError`] error type isn't
+/// informative; it doesn't return any useful piece of information.
+/// It returns something like `SendError{..}`, which is not very
+/// useful, and that's why we have decided to handle errors in the
+/// methods and provide our own custom messages.
+///
 /// We are keeping the message response type as example.
 /// In our use-case, in our custom solution, it is `()`.
 /// We gave it a name, an alias: `MsgResponseType`.
@@ -48,10 +55,13 @@ trait Actor<R> {
     type Msg;
 
     /// Create a new [`Actor`]
-    fn new() -> Self;
+    fn new(receiver: mpsc::Receiver<Self::Msg>) -> Self;
 
     /// Start the [`Actor`]
     async fn start(&mut self) {}
+
+    /// Run the [`Actor`]
+    async fn run(&mut self) -> R;
 
     /// Stop the [`Actor`]
     fn stop(&mut self) {}
@@ -74,13 +84,16 @@ trait Actor<R> {
 /// The type [`Self::Msg`] represents an incoming message type.
 ///
 /// The type [`R`] represents a response message type.
-pub(crate) trait ActorHandle<R> {
+///
+/// The type [`E`] represents an error type.
+pub(crate) trait ActorHandle<R, E> {
     /// The type [`Self::Msg`] represents an incoming message type.
     type Msg;
 
     /// Create a new [`ActorHandle`]
     ///
-    /// This function creates a single [`Actor`] instance.
+    /// This function creates a single [`Actor`] instance,
+    /// and a MPSC channel for communicating to the actor.
     ///
     /// # Panics
     ///
@@ -88,27 +101,38 @@ pub(crate) trait ActorHandle<R> {
     fn new() -> Self;
 
     /// Send a message to an [`Actor`] instance through the [`ActorHandle`]
-    async fn send(&mut self, msg: Self::Msg) -> R;
+    async fn send(&self, msg: Self::Msg) -> Result<R, E>;
 }
 
 // ============================================================================
 //
-//         [`QuoteRequestsMsg`], [`FetchActor`], [`FetchActorHandle`]
+//        [`ActorMessage`], [`UniversalActor`], [`UniversalActorHandle`]
 //
 // ============================================================================
 
-/// The [`QuoteRequestsMsg`] message
+/// The [`ActorMessage`] enumeration
 ///
-/// It contains a chunk of symbols, and `from` and `to` fields.
+/// Supports two message types:
+/// - QuoteRequestsMsg,
+/// - SymbolsClosesMsg,
 ///
-/// It also contains a [`WriterActor`] handle.
+/// There is no expected response for any of the message types.
 ///
-/// There is no expected response.
-pub struct QuoteRequestsMsg {
-    pub symbols: Vec<String>,
-    pub from: OffsetDateTime,
-    pub to: OffsetDateTime,
-    pub writer_handle: WriterActorHandle,
+/// We could have an oneshot channel for sending the response back in general case.
+/// It could be used for every message type.
+/// We simply don't need it in our specific (custom) case.
+pub enum ActorMessage {
+    QuoteRequestsMsg {
+        symbols: Vec<String>,
+        from: OffsetDateTime,
+        to: OffsetDateTime,
+        writer_handle: WriterActorHandle,
+    },
+    SymbolsClosesMsg {
+        symbols_closes: HashMap<String, Vec<f64>>,
+        from: OffsetDateTime,
+        writer_handle: WriterActorHandle,
+    },
 }
 
 /// A universal (general) type of actor
@@ -117,24 +141,52 @@ pub struct QuoteRequestsMsg {
 ///
 /// It was not made public on purpose.
 ///
-/// It can only be created through [`FetchActorHandle`], which is public.
-#[derive(Clone)]
-struct FetchActor {}
+/// It can only be created through [`UniversalActorHandle`], which is public.
+struct UniversalActor {
+    receiver: mpsc::Receiver<ActorMessage>,
+}
 
-/// Actor that downloads stock data for a specified symbol and period
-///
-/// It is stateless - it doesn't contain any user data.
-impl Actor<MsgResponseType> for FetchActor {
-    type Msg = QuoteRequestsMsg;
+impl Actor<MsgResponseType> for UniversalActor {
+    type Msg = ActorMessage;
 
-    /// Create a new [`FetchActor`]
-    fn new() -> Self {
-        Self {}
+    /// Create a new [`UniversalActor`]
+    fn new(receiver: mpsc::Receiver<ActorMessage>) -> Self {
+        Self { receiver }
     }
 
-    /// The [`QuoteRequestsMsg`] message handler for the fetch [`FetchActor`] actor
+    /// Run the [`UniversalActor`]
+    async fn run(&mut self) -> MsgResponseType {
+        while let Some(msg) = self.receiver.recv().await {
+            self.handle(msg).await;
+        }
+    }
+
+    /// Handle the message
+    async fn handle(&mut self, msg: ActorMessage) -> MsgResponseType {
+        match msg {
+            ActorMessage::QuoteRequestsMsg {
+                symbols,
+                from,
+                to,
+                writer_handle,
+            } => {
+                Self::handle_quote_requests_msg(symbols, from, to, writer_handle).await;
+            }
+            ActorMessage::SymbolsClosesMsg {
+                symbols_closes,
+                from,
+                writer_handle,
+            } => {
+                Self::handle_symbols_closes_msg(symbols_closes, from, writer_handle).await;
+            }
+        }
+    }
+}
+
+impl UniversalActor {
+    /// The [`QuoteRequestsMsg`] message handler for the fetch [`UniversalActor`] actor
     ///
-    /// Creates a new [`ProcesssorActor`] and sends it a [`SymbolsClosesMsg`] message.
+    /// Spawns a new processor [`UniversalActor`] and sends it a [`SymbolsClosesMsg`] message.
     ///
     /// The message contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol
     /// in case there was no error when fetching the data, or an empty vector in case of an error,
@@ -142,12 +194,12 @@ impl Actor<MsgResponseType> for FetchActor {
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
     /// we don't break the program but rather continue.
-    async fn handle(&mut self, msg: QuoteRequestsMsg) -> MsgResponseType {
-        let symbols = msg.symbols;
-        let from = msg.from;
-        let to = msg.to;
-        let writer_handle = msg.writer_handle;
-
+    async fn handle_quote_requests_msg(
+        symbols: Vec<String>,
+        from: OffsetDateTime,
+        to: OffsetDateTime,
+        writer_handle: WriterActorHandle,
+    ) -> MsgResponseType {
         let provider = yahoo::YahooConnector::new();
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
@@ -168,19 +220,83 @@ impl Actor<MsgResponseType> for FetchActor {
             symbols_closes.insert(symbol, closes);
         }
 
-        let symbols_closes_msg = SymbolsClosesMsg {
+        let symbols_closes_msg = ActorMessage::SymbolsClosesMsg {
             symbols_closes,
             from,
             writer_handle,
         };
 
-        // Create another Actor and send it the message.
-        let mut proc_handle = ProcessorActorHandle::new();
-        proc_handle.send(symbols_closes_msg).await
+        // Spawn another Actor and send it the message.
+        let actor_handle = UniversalActorHandle::new();
+        actor_handle
+            .send(symbols_closes_msg)
+            .await
+            .expect("Couldn't send a message to the ProcessorActor.");
     }
-}
 
-impl FetchActor {
+    /// The [`SymbolsClosesMsg`] message handler for the processor [`UniversalActor`] actor
+    ///
+    /// Sends a [`PerformanceIndicatorsRowsMsg`] message to the [`WriterActor`],
+    /// whose address it gets from the [`SymbolsClosesMsg`] message.
+    async fn handle_symbols_closes_msg(
+        symbols_closes: HashMap<String, Vec<f64>>,
+        from: OffsetDateTime,
+        writer_handle: WriterActorHandle,
+    ) -> MsgResponseType {
+        let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
+
+        let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
+
+        for symbol_closes in symbols_closes {
+            let symbol = symbol_closes.0;
+            let closes = symbol_closes.1;
+
+            if !closes.is_empty() {
+                let min = MinPrice {};
+                let max = MaxPrice {};
+                let price_diff = PriceDifference {};
+                let n_window_sma = WindowedSMA {
+                    window_size: WINDOW_SIZE,
+                };
+
+                let last_price = *closes.last().expect("Expected non-empty closes.");
+                let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
+                let pct_change = pct_change * 100.0;
+                let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
+                let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
+                let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
+                let sma = *sma.last().unwrap_or(&0.0);
+
+                let row = PerformanceIndicatorsRow {
+                    symbol: symbol.clone(),
+                    last_price,
+                    pct_change,
+                    period_min,
+                    period_max,
+                    sma,
+                };
+
+                rows.push(row);
+
+                // A simple way to output CSV data
+                println!(
+                    "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+                    from, symbol, last_price, pct_change, period_min, period_max, sma,
+                );
+            } else {
+                eprintln!("Got no data for the symbol \"{}\".", symbol);
+            }
+        }
+
+        let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
+
+        // Send the message to the single writer actor.
+        writer_handle
+            .send(perf_ind_msg)
+            .await
+            .expect("Couldn't send a message to the WriterActor.");
+    }
+
     /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
     ///
     /// # Returns
@@ -209,188 +325,46 @@ impl FetchActor {
     }
 }
 
-/// A handle for the [`FetchActor`]
+/// A handle for the [`UniversalActor`]
 ///
-/// Only the handle is public; the [`FetchActor`] isn't.
+/// Only the handle is public; the [`UniversalActor`] isn't.
 ///
-/// We can only create [`FetchActor`]s through the [`FetchActorHandle`].
+/// We can only create [`UniversalActor`]s through the [`UniversalActorHandle`].
 ///
-/// It contains the `actor` field.
+/// It contains the `sender` field, which represents
+/// a sender of the [`ActorMessage`] in an MPSC channel.
 ///
-/// We only create a single [`FetchActor`] instance in an [`FetchActorHandle`].
+/// The handle is the sender, and the actor is the receiver
+/// of a message in the channel.
+///
+/// We only create a single [`UniversalActor`] instance in an [`UniversalActorHandle`].
 #[derive(Clone)]
-pub struct FetchActorHandle {
-    actor: FetchActor,
+pub struct UniversalActorHandle {
+    sender: mpsc::Sender<ActorMessage>,
 }
 
-impl ActorHandle<MsgResponseType> for FetchActorHandle {
-    type Msg = QuoteRequestsMsg;
+impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandle {
+    type Msg = ActorMessage;
 
-    /// Create a new [`FetchActorHandle`]
+    /// Create a new [`UniversalActorHandle`]
     ///
-    /// This function creates a single [`FetchActor`] instance,
-    /// and maintains a reference to the actor, so we can send it
-    /// messages.
-    ///
-    /// It also starts (runs) the actor.
+    /// This function creates a single [`UniversalActor`] instance,
+    /// and a MPSC channel for communicating to the actor.
     ///
     /// # Panics
     ///
     /// Panics if it can't run the actor.
     fn new() -> Self {
-        let mut actor = FetchActor::new();
-        tokio::spawn(async move { actor.start().await });
+        let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
+        let mut actor = UniversalActor::new(receiver);
+        tokio::spawn(async move { actor.run().await });
 
-        Self { actor }
+        Self { sender }
     }
 
-    /// Send a message to a [`FetchActor`] instance through the [`FetchActorHandle`]
-    async fn send(&mut self, msg: QuoteRequestsMsg) -> MsgResponseType {
-        self.actor.handle(msg).await;
-    }
-}
-
-// ============================================================================
-//
-//      [`SymbolsClosesMsg`], [`ProcessorActor`], [`ProcessorActorHandle`]
-//
-// ============================================================================
-
-/// The [`SymbolsClosesMsg`] message
-///
-/// It contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol,
-/// and the starting date and time `from` field.
-///
-/// It also contains a [`WriterActor`] address.
-///
-/// There is no expected response.
-struct SymbolsClosesMsg {
-    pub symbols_closes: HashMap<String, Vec<f64>>,
-    pub from: OffsetDateTime,
-    pub writer_handle: WriterActorHandle,
-}
-
-/// A universal (general) type of actor
-///
-/// It can receive and handle two message types.
-///
-/// It was not made public on purpose.
-///
-/// It can only be created through [`ProcessorActorHandle`], which is public.
-#[derive(Clone)]
-struct ProcessorActor {}
-
-/// Actor that downloads stock data for a specified symbol and period
-///
-/// It is stateless - it doesn't contain any user data.
-impl Actor<MsgResponseType> for ProcessorActor {
-    type Msg = SymbolsClosesMsg;
-
-    /// Create a new [`ProcessorActor`]
-    fn new() -> Self {
-        Self {}
-    }
-
-    /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
-    ///
-    /// Sends a [`PerformanceIndicatorsRowsMsg`] message to the [`WriterActor`],
-    /// whose address it gets from the [`SymbolsClosesMsg`] message.
-    async fn handle(&mut self, msg: SymbolsClosesMsg) -> MsgResponseType {
-        let symbols_closes = msg.symbols_closes;
-        let from = msg.from;
-        let mut writer_handle = msg.writer_handle;
-
-        let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
-
-        let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
-
-        for symbol_closes in symbols_closes {
-            let symbol = symbol_closes.0;
-            let closes = symbol_closes.1;
-
-            if !closes.is_empty() {
-                let min = MinPrice {};
-                let max = MaxPrice {};
-                let price_diff = PriceDifference {};
-                let n_window_sma = WindowedSMA {
-                    window_size: WINDOW_SIZE,
-                };
-
-                let last_price = *closes.last().expect("Expected non-empty closes.");
-                let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
-                let pct_change = pct_change * 100.0;
-                let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
-                let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
-                let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
-                let sma = *sma.last().unwrap_or(&0.0);
-
-                let row = crate::my_async_actors::PerformanceIndicatorsRow {
-                    symbol: symbol.clone(),
-                    last_price,
-                    pct_change,
-                    period_min,
-                    period_max,
-                    sma,
-                };
-
-                rows.push(row);
-
-                // A simple way to output CSV data
-                println!(
-                    "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                    from, symbol, last_price, pct_change, period_min, period_max, sma,
-                );
-            } else {
-                eprintln!("Got no data for the symbol \"{}\".", symbol);
-            }
-        }
-
-        let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
-
-        // Send the message to the single writer actor.
-        writer_handle.send(perf_ind_msg).await
-    }
-}
-
-/// A handle for the [`ProcessorActor`]
-///
-/// Only the handle is public; the [`ProcessorActor`] isn't.
-///
-/// We can only create [`ProcessorActor`]s through the [`ProcessorActorHandle`].
-///
-/// It contains the `actor` field.
-///
-/// We only create a single [`ProcessorActor`] instance in an [`ProcessorActorHandle`].
-#[derive(Clone)]
-struct ProcessorActorHandle {
-    actor: ProcessorActor,
-}
-
-impl ActorHandle<MsgResponseType> for ProcessorActorHandle {
-    type Msg = SymbolsClosesMsg;
-
-    /// Create a new [`ProcessorActorHandle`]
-    ///
-    /// This function creates a single [`ProcessorActor`] instance,
-    /// and maintains a reference to the actor, so we can send it
-    /// messages.
-    ///
-    /// It also starts (runs) the actor.
-    ///
-    /// # Panics
-    ///
-    /// Panics if it can't run the actor.
-    fn new() -> Self {
-        let mut actor = ProcessorActor::new();
-        tokio::spawn(async move { actor.start().await });
-
-        Self { actor }
-    }
-
-    /// Send a message to a [`ProcessorActor`] instance through the [`ProcessorActorHandle`]
-    async fn send(&mut self, msg: SymbolsClosesMsg) -> MsgResponseType {
-        let mut actor = ProcessorActor::new();
-        tokio::spawn(async move { actor.handle(msg).await });
+    /// Send a message to an [`UniversalActor`] instance through the [`UniversalActorHandle`]
+    async fn send(&self, msg: ActorMessage) -> Result<MsgResponseType, UniversalMsgErrorType> {
+        Ok(self.sender.send(msg).await?)
     }
 }
 
@@ -429,10 +403,8 @@ pub struct PerformanceIndicatorsRowsMsg {
 /// It is not made public on purpose.
 ///
 /// It can only be created through [`WriterActorHandle`], which is public.
-#[derive(Clone)] // "the trait `Clone` is not implemented for `std::io::BufWriter<std::fs::File>`"
-                 // We only have a single [`WriterActor`] in our app, but its handle needs to be cloned in main logic
-                 // (in the loop), hence it needs to be `Clone`.
 struct WriterActor {
+    receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>,
     pub file_name: String,
     pub writer: Option<BufWriter<File>>,
 }
@@ -441,8 +413,9 @@ impl Actor<MsgResponseType> for WriterActor {
     type Msg = PerformanceIndicatorsRowsMsg;
 
     /// Create a new [`WriterActor`]
-    fn new() -> Self {
+    fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
         Self {
+            receiver,
             file_name: CSV_FILE_NAME.to_string(),
             writer: None,
         }
@@ -457,6 +430,19 @@ impl Actor<MsgResponseType> for WriterActor {
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
         println!("WriterActor is started.");
+
+        self.run().await
+    }
+
+    /// Run the [`WriterActor`]
+    ///
+    /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
+    async fn run(&mut self) -> MsgResponseType {
+        println!("WriterActor is running.");
+
+        while let Some(msg) = self.receiver.recv().await {
+            self.handle(msg).await;
+        }
     }
 
     /// Stop the [`WriterActor`]
@@ -509,22 +495,25 @@ impl Drop for WriterActor {
 ///
 /// We can only create [`WriterActor`]s through the [`WriterActorHandle`].
 ///
-/// It contains the `actor` field.
+/// It contains the `sender` field, which represents
+/// a sender of the [`PerformanceIndicatorsRowsMsg`] in an MPSC channel.
+///
+/// The handle is the sender, and the actor is the receiver
+/// of a message in the channel.
 ///
 /// We only create a single [`WriterActor`] instance in a [`WriterActorHandle`].
 #[derive(Clone)]
 pub struct WriterActorHandle {
-    actor: WriterActor,
+    sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>,
 }
 
-impl ActorHandle<MsgResponseType> for WriterActorHandle {
+impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
     type Msg = PerformanceIndicatorsRowsMsg;
 
     /// Create a new [`WriterActorHandle`]
     ///
     /// This function creates a single [`WriterActor`] instance,
-    /// and maintains a reference to the actor, so we can send it
-    /// messages.
+    /// and a MPSC channel for communicating with the actor.
     ///
     /// It also starts (runs) the actor.
     ///
@@ -532,14 +521,18 @@ impl ActorHandle<MsgResponseType> for WriterActorHandle {
     ///
     /// Panics if it can't run the actor.
     fn new() -> Self {
-        let mut actor = WriterActor::new();
+        let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
+        let mut actor = WriterActor::new(receiver);
         tokio::spawn(async move { actor.start().await });
 
-        Self { actor }
+        Self { sender }
     }
 
     /// Send a message to an [`WriterActor`] instance through the [`WriterActorHandle`]
-    async fn send(&mut self, msg: PerformanceIndicatorsRowsMsg) -> MsgResponseType {
-        self.actor.handle(msg).await;
+    async fn send(
+        &self,
+        msg: PerformanceIndicatorsRowsMsg,
+    ) -> Result<MsgResponseType, WriterMsgErrorType> {
+        Ok(self.sender.send(msg).await?)
     }
 }
