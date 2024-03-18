@@ -13,7 +13,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
+use crate::my_async_actors::{ActorHandle, FetchActorHandle, QuoteRequestsMsg, WriterActorHandle};
 
 /// **The main loop**
 ///
@@ -112,9 +112,9 @@ pub async fn main_loop() {
         // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
         // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
         for chunk in chunks_of_symbols.clone() {
-            let actor_handle = UniversalActorHandle::new();
+            let mut actor_handle = FetchActorHandle::new();
             let _ = actor_handle
-                .send(ActorMessage::QuoteRequestsMsg {
+                .send(QuoteRequestsMsg {
                     symbols: chunk.into(),
                     from,
                     to,
