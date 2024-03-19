@@ -95,11 +95,13 @@ pub fn start_writer() -> Option<BufWriter<File>> {
     writer
 }
 
-pub fn write_to_csv(mut writer: &mut Option<BufWriter<File>>, rows: Vec<Vec<String>>) {
+pub fn write_to_csv(mut writer: &mut Option<BufWriter<File>>, all_rows: Vec<Vec<String>>) {
     if let Some(file) = &mut writer {
-        let rows = rows.iter().flatten();
-        for row in rows {
-            let _ = writeln!(file, "{}", row);
+        // let rows = rows.iter().flatten();
+        for rows in all_rows {
+            for row in rows {
+                let _ = writeln!(file, "{}", row);
+            }
         }
         file.flush().expect("Failed to flush to file. Data loss :/");
     }
