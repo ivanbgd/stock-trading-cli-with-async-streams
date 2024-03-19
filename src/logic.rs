@@ -12,7 +12,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 // use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::process::{handle_symbol_data, start_writer, write_to_csv};
+use crate::process::{handle_symbol_data, start_writer, stop_writer, write_to_csv};
 
 /// **The main loop**
 ///
@@ -26,7 +26,7 @@ use crate::process::{handle_symbol_data, start_writer, write_to_csv};
 ///
 /// Async code is also used for fetching and processing of data.
 // pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
-pub async fn main_loop() {
+pub async fn main_loop(mut rx: tokio::sync::mpsc::Receiver<bool>) {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
@@ -100,6 +100,14 @@ pub async fn main_loop() {
         let rows = futures::future::join_all(handles).await;
         let rows = rows.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
         write_to_csv(&mut writer, rows);
+
+        // We only get the first iteration of the loop! :/
+        // We get stuck here, even though the receiving part works (halt is received and evaluated properly).
+        let halt = rx.recv().await.unwrap();
+        // This part works (true or false).
+        if halt {
+            break; // This part works (in case of `true`).
+        }
 
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
 
@@ -239,7 +247,8 @@ pub async fn main_loop() {
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
 
-    // stop_writer(writer); // Unreachable, but also unneeded if using Tokio's interval.
+    println!("OUT!!!"); // Reachable and gets printed, but we only get the first iteration of the loop! :/
+    stop_writer(writer); // Reachable and gets executed, but also unneeded if using Tokio's interval.
 
     // System::current().stop();
 
