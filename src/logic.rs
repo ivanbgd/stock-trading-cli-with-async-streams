@@ -1,12 +1,10 @@
 // use std::sync::OnceLock;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-// use actix::{Actor, SyncArbiter};
-// use actix_rt::System;
 // use async_std::stream::{self, StreamExt};
-use async_std::stream::{self, StreamExt};
 use clap::Parser;
-use rayon::prelude::*;
+// use rayon::prelude::*;
 // use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -24,28 +22,28 @@ use crate::process::{handle_symbol_data, start_writer, stop_writer, write_to_csv
 ///
 /// To be more precise, this is a parallel implementation.
 ///
-/// Async is used for async streams - for intervals.
+/// Async code is used for intervals.
 ///
-/// Async is also used for fetching and processing of data.
+/// Async code is also used for fetching and processing of data.
 // pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
 pub async fn main_loop() {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
 
-    let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
-    // If we use rayon and its `par_iter()`, it doesn't make a difference in our case whether we use
-    // stdlib chunks or rayon chunks.
-    // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
-    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
-
-    // // This is required only if using Tokio.
     // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
-    // static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
-    // // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
-    // let symbols = SYMBOLS.get_or_init(|| symbols);
+    // // If we use rayon and its `par_iter()`, it doesn't make a difference in our case whether we use
+    // // stdlib chunks or rayon chunks.
     // // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
+
+    // This is required only if using Tokio.
+    let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
+    // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
+    let symbols = SYMBOLS.get_or_init(|| symbols);
+    // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
+    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
 
     // // We need to ensure that we have one and only one `WriterActor` - a singleton.
     // // This is because it writes to a file, and writing to a shared object,
@@ -61,9 +59,13 @@ pub async fn main_loop() {
 
     let mut writer = start_writer();
 
-    let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+    // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+    let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    while let Some(_) = interval.next().await {
+    // while let Some(_) = interval.next().await {
+    loop {
+        interval.tick().await;
+
         // for _ in 0..1 { // todo: remove the FOR line
         // We always want a fresh period end time, which is "now" in the UTC time zone.
         let to = OffsetDateTime::now_utc();
@@ -76,15 +78,27 @@ pub async fn main_loop() {
 
         let start = Instant::now();
 
-        // NEW: SYNC (BLOCKING) WITHOUT ACTORS AND WITH RAYON
+        // NEW: SYNC (BLOCKING) WITHOUT ACTORS, WITH WRITING TO FILE
 
-        // THE FASTEST SOLUTION - ??? 1.0 s with chunk size of 5!
+        // THE FASTEST SOLUTION - 0.9 s with chunk size of 5!
         // This uses async fetching and processing of data.
-        let queries: Vec<_> = chunks_of_symbols
-            .par_iter()
-            .map(|chunk| handle_symbol_data(chunk, from, to))
-            .collect();
-        let rows = futures::future::join_all(queries).await;
+
+        // // rayon: 1.0 s
+        // let queries: Vec<_> = chunks_of_symbols
+        //     .par_iter()
+        //     .map(|chunk| handle_symbol_data(chunk, from, to))
+        //     .collect();
+        // let rows = futures::future::join_all(queries).await;
+        // write_to_csv(&mut writer, rows);
+
+        // Tokio: 0.9 s
+        let mut handles = vec![];
+        for chunk in chunks_of_symbols.clone() {
+            let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
+            handles.push(handle);
+        }
+        let rows = futures::future::join_all(handles).await;
+        let rows = rows.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
         write_to_csv(&mut writer, rows);
 
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS

@@ -95,7 +95,7 @@ pub fn start_writer() -> Option<BufWriter<File>> {
     writer
 }
 
-pub fn write_to_csv(mut writer: &mut Option<BufWriter<File>>, all_rows: Vec<Vec<String>>) {
+pub fn write_to_csv(mut writer: &mut Option<BufWriter<File>>, all_rows: Vec<&Vec<String>>) {
     if let Some(file) = &mut writer {
         // let rows = rows.iter().flatten();
         for rows in all_rows {

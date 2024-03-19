@@ -148,8 +148,8 @@ pricing data and calculate key financial metrics in real time.
     - We need to fetch data for around 500 symbols and the function `get_quote_history()` fetches data for one symbol
       (called "ticker") at a time. It is asynchronous, but perhaps this is the best that we can do.
 - Writing to file had not been implemented at this stage.
-- TODO: When we added writing to file, using `rayon` with chunk size equal 5 yielded execution time of `1` s!
-- TODO: With writing to file, using `Tokio` with chunk size equal 5 yields execution time...
+- TODO: When we added writing to file, using `rayon` with chunk size equal 5 yielded execution time of `1.0`!
+- TODO: With writing to file, using `Tokio` with chunk size equal 5 yields execution time of `0.9` s!
 - TODO: With writing to file, using `crossbeam` with chunk size equal 5 yields execution time...
 - We didn't try `stdlib` threading with writing to file.
 
