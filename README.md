@@ -38,7 +38,7 @@ pricing data and calculate key financial metrics in real time.
         - with [actix](https://crates.io/crates/actix), as an Actor framework for Rust,
         - with [xactor](https://crates.io/crates/xactor), as another Actor framework for Rust,
         - with **our own** asynchronous implementation of Actors,
-        - with **our own** synchronous implementation of Actors,
+        - TODO: with **our own** synchronous implementation of Actors,
         - with a single actor that is responsible for downloading, processing, and printing of the processed data to
           console,
         - with two actors: the data-fetching one and the one that combines data processing and printing of results,
@@ -56,6 +56,10 @@ pricing data and calculate key financial metrics in real time.
     - We can send the requests manually from the command line. We are not implementing a web client.
 
 ## Implementation Notes and Conclusions
+
+Here follow implementation details and conclusions.
+
+We also included comparison of different implementations.
 
 ### Synchronous Single-Threaded Implementation
 
@@ -148,19 +152,25 @@ pricing data and calculate key financial metrics in real time.
     - We need to fetch data for around 500 symbols and the function `get_quote_history()` fetches data for one symbol
       (called "ticker") at a time. It is asynchronous, but perhaps this is the best that we can do.
 - Writing to file had not been implemented at this stage.
-- TODO: When we added writing to file, using `rayon` with chunk size equal 5 yielded execution time of `1.0`!
-- TODO: With writing to file, using `Tokio` with chunk size equal 5 yields execution time of `0.9` s!
+- When we added writing to file, using `rayon` with chunk size equal 5 yielded execution time of `1.0`!
+- With writing to file, using `Tokio` with chunk size equal 5 yields execution time of `0.9` s!
+- TODO: With writing to file, `stdlib` with chunk size equal 5 yields execution time of ??? s!
 - TODO: With writing to file, using `crossbeam` with chunk size equal 5 yields execution time...
-- We didn't try `stdlib` threading with writing to file.
+- We used a barrier to write all results, from all threads, to the file at once.
+- TODO: We also implemented writing individual chunks, by individual threads, to the file, by using a lock.
+    - TODO: Performance was the same as with barrier for writing all results at once. ?! CHECK!!!
 
 ### Synchronous Multithreaded Implementation: TODO
 
 - TODO: Using `rayon` with chunk size equal 5 yields execution time equal `1` second!
 - TODO: Using `crossbeam` with chunk size equal 5 yields execution time...
 - TODO: Using `stdlib` threading with chunk size equal 5 yields execution time...
-- TODO: Writing to file was implemented at this stage. Not yet...
-    - We can write chunks, which requires synchronization, or we can write all results at once, which requires a
-      barrier.
+- Writing to file was implemented at this stage. It requires synchronization, as multiple threads write to the same
+  file.
+    - We can write chunks, which requires using a lock, or we can write all results at once, which requires a barrier.
+        - Writing chunks makes more sense with large amounts of data, especially if they don't fit in memory.
+        - Writing all results at once probably makes more sense when the amount of data is not large and fits in memory,
+          which is our case.
 
 ### Asynchronous Multithreaded Implementation with Actors
 

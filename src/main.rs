@@ -1,8 +1,8 @@
 use stock::logic::main_loop;
 use stock_trading_cli_with_async_streams as stock;
 
-// #[async_std::main]
-#[tokio::main]
+#[async_std::main]
+// #[tokio::main]
 // async fn main() -> Result<MsgResponseType, actix::MailboxError> {
 async fn main() {
     println!();

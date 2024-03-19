@@ -62,11 +62,11 @@ pub async fn main_loop() {
     // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
     let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
+    // for _ in 0..1 { // todo: remove the FOR line
     // while let Some(_) = interval.next().await {
     loop {
         interval.tick().await;
 
-        // for _ in 0..1 { // todo: remove the FOR line
         // We always want a fresh period end time, which is "now" in the UTC time zone.
         let to = OffsetDateTime::now_utc();
 
