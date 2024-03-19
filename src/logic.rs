@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+// use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 // use actix::{Actor, SyncArbiter};
@@ -6,42 +6,42 @@ use std::time::{Duration, Instant};
 // use async_std::stream::{self, StreamExt};
 use async_std::stream::{self, StreamExt};
 use clap::Parser;
-// use rayon::prelude::*;
+use rayon::prelude::*;
 // use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
+// use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
+use crate::process::{handle_symbol_data, start_writer, stop_writer};
 
 /// **The main loop**
 ///
-/// Implemented by using explicit concurrency with async-await paradigm.
+/// Implemented by using classical multithreading for concurrency.
 ///
-/// Runs multiple instances of the same `Future` concurrently.
+/// Runs multiple instances of the same task concurrently.
 ///
-/// This uses the waiting time more efficiently.
+/// To be more precise, this is a parallel implementation.
 ///
-/// This can increase the program's I/O throughput dramatically,
-/// which may be needed to keep the strict schedule with an async
-/// stream (that ticks every [`TICK_INTERVAL_SECS`] seconds), without
-/// having to manage threads or data structures to retrieve results.
+/// Async is used for async streams - for intervals.
+///
+/// Async is also used for fetching and processing of data.
 // pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
 pub async fn main_loop() {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
 
-    // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
-    // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
-    // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
-
     let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
-    static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
-    // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
-    let symbols = SYMBOLS.get_or_init(|| symbols);
-    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
+    // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
+    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
+
+    // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    // static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
+    // // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
+    // let symbols = SYMBOLS.get_or_init(|| symbols);
+    // // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect();
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect();
 
     // // let symbols: Vec<&str> = args.symbols.split(",").collect();
@@ -80,7 +80,9 @@ pub async fn main_loop() {
     // // by using a single writer actor.
     // let writer_address = WriterActor::new().start();
 
-    let writer_handle = WriterActorHandle::new();
+    // let writer_handle = WriterActorHandle::new();
+
+    let writer = start_writer();
 
     let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
@@ -99,29 +101,41 @@ pub async fn main_loop() {
 
         let start = Instant::now();
 
+        // NEW: SYNC (BLOCKING) WITHOUT ACTORS AND WITH RAYON
+
+        // THE FASTEST SOLUTION - ??? 1.0 s with chunk size of 5!
+        // This uses async fetching and processing of data.
+        // TODO: This is not new. We already had this. Now we want to implement writing to file.
+        let queries: Vec<_> = chunks_of_symbols
+            .par_iter()
+            .map(|chunk| handle_symbol_data(chunk, from, to))
+            .collect();
+        let _ = futures::future::join_all(queries).await;
+        // TODO: Write to file!
+
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
 
         // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
         // This is fast! Possibly even below a second.
 
-        // We start multiple instances of `Actor` - one per chunk of symbols,
-        // and they will start the next `Actor` in the process - one each.
-        // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
-        //
-        // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
-        for chunk in chunks_of_symbols.clone() {
-            let actor_handle = UniversalActorHandle::new();
-            let _ = actor_handle
-                .send(ActorMessage::QuoteRequestsMsg {
-                    symbols: chunk.into(),
-                    from,
-                    to,
-                    writer_handle: writer_handle.clone(),
-                })
-                .await;
-        }
+        // // We start multiple instances of `Actor` - one per chunk of symbols,
+        // // and they will start the next `Actor` in the process - one each.
+        // // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
+        // //
+        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+        // // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
+        // for chunk in chunks_of_symbols.clone() {
+        //     let actor_handle = UniversalActorHandle::new();
+        //     let _ = actor_handle
+        //         .send(ActorMessage::QuoteRequestsMsg {
+        //             symbols: chunk.into(),
+        //             from,
+        //             to,
+        //             writer_handle: writer_handle.clone(),
+        //         })
+        //         .await;
+        // }
 
         // // With rayon. Same speed as without rayon; fast (chunks or par_chunks don't make a difference).
         //
@@ -214,6 +228,7 @@ pub async fn main_loop() {
         // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
         // // Explicit concurrency with async/await paradigm:
         // // Run multiple instances of the same Future concurrently.
+        // // This is using rayon.
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| handle_symbol_data(chunk, from, to))
@@ -223,6 +238,7 @@ pub async fn main_loop() {
         // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
         // // The `main()` function requires `#[actix::main]`.
         // // If we instead put `#[tokio::main]` it throws a panic.
+        // // This is using Tokio.
         // let mut handles = vec![];
         // for chunk in chunks_of_symbols.clone() {
         //     let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
@@ -234,6 +250,8 @@ pub async fn main_loop() {
     }
 
     // System::current().stop();
+
+    stop_writer(writer);
 
     // Ok(())
 }

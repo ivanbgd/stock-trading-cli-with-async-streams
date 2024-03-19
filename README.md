@@ -38,6 +38,7 @@ pricing data and calculate key financial metrics in real time.
         - with [actix](https://crates.io/crates/actix), as an Actor framework for Rust,
         - with [xactor](https://crates.io/crates/xactor), as another Actor framework for Rust,
         - with **our own** asynchronous implementation of Actors,
+        - with **our own** synchronous implementation of Actors,
         - with a single actor that is responsible for downloading, processing, and printing of the processed data to
           console,
         - with two actors: the data-fetching one and the one that combines data processing and printing of results,
@@ -48,7 +49,7 @@ pricing data and calculate key financial metrics in real time.
         - with single-threaded implementation,
         - with multithreaded implementation (with various libraries),
         - with various combinations of the above.
-- Some of that was suggested by the project author, and some of it was added on own initiative.
+- Some of that was suggested by the project author, and some of it (a lot of it) was added on own initiative.
     - Not everything is contained in the final commit.
     - The repository commit history contains different implementations.
 - The goal was also to create a web service for serving the requests for fetching of the data.
@@ -62,6 +63,7 @@ pricing data and calculate key financial metrics in real time.
 - The implementation was single-threaded.
 - The [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api) crate that we used supports the blocking feature.
 - This implementation was slow.
+- Writing to file was not implemented at this stage.
 
 ### Asynchronous Single-Threaded Implementation
 
@@ -107,14 +109,15 @@ pricing data and calculate key financial metrics in real time.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
 - We couldn't measure execution time properly in case of asynchronous code.
+- Writing to file was not implemented at this stage.
 
-### Asynchronous Multi-Threaded Implementation
+### Asynchronous Multithreaded Implementation
 
 - Using the [rayon](https://crates.io/crates/rayon) crate for parallelization keeps execution time at around `2.5`
   seconds without chunking symbols.
     - We still use `futures::future::join_all(queries).await;` to join all tasks.
 - Using `rayon` with chunks yields the same results as above implementation with chunks.
-    - For chunk size equal 5, execution time is around `1.2` s! Chunk size of 5 again seems like a sweet-spot for this
+    - For chunk size equal 5, execution time is around `1.0` s! Chunk size of 5 again seems like a sweet-spot for this
       application with this implementation.
     - All CPU cores are really being employed (as can be seen in Task Manager).
 - Using `rayon` is easy. It has parallel iterators that support *chunking*. We can turn our sequential code into
@@ -132,6 +135,8 @@ pricing data and calculate key financial metrics in real time.
         - The sweet spot for the chunk size is again 5, and that yields execution time of `1.2` s.
 - Wrapping `symbols` in `std::sync::Arc` and using `std::thread::scope` provides a working solution that is almost as
   fast as other fast multithreading solutions.
+- We can conclude that `rayon` and `Tokio` provide equal performance in our case, and the standard library MT solution
+  is more or less of the same speed in our case.
 - A higher CPU utilization can be observed with chunk size of 5 than with chunk size of 128, for example, which is good,
   as it leads to higher efficiency.
 - All measurements were performed with 503 S&P symbols provided.
@@ -142,8 +147,22 @@ pricing data and calculate key financial metrics in real time.
 - We are probably limited by the data-fetching time from the Yahoo! Finance API. That's probably our bottleneck.
     - We need to fetch data for around 500 symbols and the function `get_quote_history()` fetches data for one symbol
       (called "ticker") at a time. It is asynchronous, but perhaps this is the best that we can do.
+- Writing to file had not been implemented at this stage.
+- TODO: When we added writing to file, using `rayon` with chunk size equal 5 yielded execution time...
+- TODO: With writing to file, using `Tokio` with chunk size equal 5 yields execution time...
+- TODO: With writing to file, using `crossbeam` with chunk size equal 5 yields execution time...
+- We didn't try `stdlib` threading with writing to file.
 
-### The Actor Model
+### Synchronous Multithreaded Implementation: TODO
+
+- TODO: Using `rayon` with chunk size equal 5 yields execution time equal `1` second!
+- TODO: Using `crossbeam` with chunk size equal 5 yields execution time...
+- TODO: Using `stdlib` threading with chunk size equal 5 yields execution time...
+- TODO: Writing to file was implemented at this stage. Not yet...
+    - We can write chunks, which requires synchronization, or we can write all results at once, which requires a
+      barrier.
+
+### Asynchronous Multithreaded Implementation with Actors
 
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
 - This can be a fast solution for this problem, even with one type of actor that performs all three operations
@@ -172,7 +191,7 @@ pricing data and calculate key financial metrics in real time.
         - The `rayon` implementation uses multiple instances of both types of Actor, and has the same performance as
           the non-`rayon` implementation, i.e., `~2.5` s.
 - The Three-Actor implementation has the `ProcessorWriterActor` split into two actors, for the total of three
-  actors.
+  actor types.
     - The `FetchActor` is responsible for fetching data from the Yahoo! Finance API.
     - The `ProcessorActor` calculates performance indicators and prints them to `stdout`.
     - The `WriterActor` writes the performance indicators to a `CSV` file.
@@ -211,8 +230,8 @@ pricing data and calculate key financial metrics in real time.
       the `ProcessorActor`.
 - We experimented with the Publisher/Subscriber model with the `Actix` framework, to get a feel of it.
     - The Publisher/Subscriber model is generally better suited to applications that have a number of different
-      instances of the same actor, and they should all get the message, or where there are different types of subscriber
-      actors which should all receive the message, i.e., be notified of it.
+      instances of the same actor, and they should all get a message, or where there are different types of subscriber
+      actors which should all receive the same message, i.e., be notified of it.
     - Our application is not like that, but we still wanted to try it out and play around with it a little.
         - Namely, we don't want our actors to do the double work, so we have only one instance of each.
         - We could try to implement multiple instances of actors for fun, to see if all of them really get the messages.
@@ -243,6 +262,10 @@ pricing data and calculate key financial metrics in real time.
         - It is not general. It is not meant as a general library, but it could be generalized. It's a good starting
           point for a general Actor Model library.
     - Performance is excellent! It is at least as fast as our previous fastest solution, if not faster.
+
+### Synchronous Multithreaded Implementation with Actors: TODO
+
+- TODO:
 
 ### The Web Service
 
