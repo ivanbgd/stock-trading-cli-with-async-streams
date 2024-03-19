@@ -17,5 +17,5 @@ clap = { version = "4.5.1", features = ["derive"] }
 futures = { version = "0.3" }
 rayon = { version = "1.9" }
 time = { version = "0.3", features = ["formatting", "parsing"] }
-tokio = { version = "1.36", features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.36", features = ["macros", "rt", "rt-multi-thread"] }
 yahoo_finance_api = { version = "2.1" }

@@ -12,7 +12,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 // use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::process::{handle_symbol_data, start_writer, stop_writer, write_to_csv};
+use crate::process::{handle_symbol_data, start_writer, write_to_csv};
 
 /// **The main loop**
 ///
@@ -31,14 +31,14 @@ pub async fn main_loop() {
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .expect("The provided date or time format isn't correct.");
 
-    // let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    // let symbols: Vec<String> = args.symbols.split(',').map(|s| s.to_string()).collect();
     // // If we use rayon and its `par_iter()`, it doesn't make a difference in our case whether we use
     // // stdlib chunks or rayon chunks.
     // // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
 
     // This is required only if using Tokio.
-    let symbols: Vec<String> = args.symbols.split(",").map(|s| s.to_string()).collect();
+    let symbols: Vec<String> = args.symbols.split(',').map(|s| s.to_string()).collect();
     static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
     // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
     let symbols = SYMBOLS.get_or_init(|| symbols);
@@ -192,11 +192,13 @@ pub async fn main_loop() {
 
         // OLD WITH ACTORS
 
+        // // This is not using rayon.
         // for chunk in chunks_of_symbols.clone() {
         //     let chunk = chunk.to_vec();
         //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         // }
 
+        // // This is using rayon.
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| async {
@@ -237,7 +239,7 @@ pub async fn main_loop() {
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
 
-    stop_writer(writer);
+    // stop_writer(writer); // Unreachable, but also unneeded if using Tokio's interval.
 
     // System::current().stop();
 
