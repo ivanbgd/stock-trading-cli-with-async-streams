@@ -36,12 +36,13 @@ async fn fetch_closing_data(
 ///
 /// We don't need to return anything.
 pub async fn handle_symbol_data(
-    // symbols: &[&str],
     symbols: &[String],
     beginning: OffsetDateTime,
     end: OffsetDateTime,
-) {
+) -> Vec<String> {
     let provider = yahoo::YahooConnector::new();
+
+    let mut rows = vec![];
 
     for symbol in symbols {
         let closes = fetch_closing_data(symbol, beginning, end, &provider)
@@ -62,8 +63,7 @@ pub async fn handle_symbol_data(
             let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
             let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
 
-            // A simple way to output CSV data
-            println!(
+            let row = format!(
                 "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
                 OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'."),
                 symbol,
@@ -73,8 +73,15 @@ pub async fn handle_symbol_data(
                 period_max,
                 sma.last().unwrap_or(&0.0)
             );
+
+            // A simple way to print CSV data
+            println!("{}", row);
+
+            rows.push(row);
         }
     }
+
+    rows
 }
 
 pub fn start_writer() -> Option<BufWriter<File>> {
@@ -88,7 +95,15 @@ pub fn start_writer() -> Option<BufWriter<File>> {
     writer
 }
 
-pub fn write_to_csv() {}
+pub fn write_to_csv(mut writer: &mut Option<BufWriter<File>>, rows: Vec<Vec<String>>) {
+    if let Some(file) = &mut writer {
+        let rows = rows.iter().flatten();
+        for row in rows {
+            let _ = writeln!(file, "{}", row);
+        }
+        file.flush().expect("Failed to flush to file. Data loss :/");
+    }
+}
 
 pub fn stop_writer(mut writer: Option<BufWriter<File>>) {
     if let Some(writer) = &mut writer {
