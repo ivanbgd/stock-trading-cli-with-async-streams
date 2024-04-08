@@ -239,6 +239,7 @@ pub async fn main_loop() {
         println!("\nTook {:.3?} to complete.", start.elapsed());
     }
 
+    // println!("OUT!!!");
     // stop_writer(writer); // Unreachable, but also unneeded if using Tokio's interval.
 
     // System::current().stop();

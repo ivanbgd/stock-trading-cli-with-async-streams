@@ -34,7 +34,7 @@ async fn fetch_closing_data(
 
 /// Convenience function that chains together the entire processing chain
 ///
-/// We don't need to return anything.
+/// We return a vector of rows with results.
 pub async fn handle_symbol_data(
     symbols: &[String],
     beginning: OffsetDateTime,

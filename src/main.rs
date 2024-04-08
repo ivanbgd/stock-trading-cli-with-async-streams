@@ -18,7 +18,7 @@ async fn main() {
     // Await the shutdown signal
     match tokio::signal::ctrl_c().await {
         Ok(()) => {
-            println!("CTRL+C received. Shutting down...");
+            println!("\nCTRL+C received. Shutting down...");
         }
         Err(err) => {
             // We also shut down in case of error.
