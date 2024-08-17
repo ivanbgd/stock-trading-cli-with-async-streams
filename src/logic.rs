@@ -28,12 +28,14 @@ use crate::types::MsgResponseType;
 /// Async code is used for intervals.
 ///
 /// Async code is also used for fetching and processing of data.
+///
+/// # Errors
+/// - [time::error::Parse](https://docs.rs/time/0.3.36/time/error/enum.Parse.html)
 // pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
 pub async fn main_loop() -> Result<MsgResponseType> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .context("The provided date or time format isn't correct.")?;
-    // .expect("The provided date or time format isn't correct.");
 
     // let symbols: Vec<String> = args.symbols.split(',').map(|s| s.to_string()).collect();
     // // If we use rayon and its `par_iter()`, it doesn't make a difference in our case whether we use
@@ -66,7 +68,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
     // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
     let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // for _ in 0..1 { // todo: remove the FOR line
+    // for _ in 0..1 { // TODO: remove the FOR line
     // while let Some(_) = interval.next().await {
     loop {
         interval.tick().await;
@@ -95,7 +97,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // let rows = futures::future::join_all(queries).await;
         // write_to_csv(&mut writer, rows);
 
-        // Tokio: 0.9 s
+        // Tokio: 0.7-0.8 s (new computer); was 0.9 s
         let mut handles = vec![];
         for chunk in chunks_of_symbols.clone() {
             let handle = tokio::spawn(handle_symbol_data(chunk, from, to));

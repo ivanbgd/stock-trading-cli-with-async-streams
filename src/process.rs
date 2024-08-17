@@ -46,10 +46,14 @@ pub async fn handle_symbol_data(
 ) -> Result<Vec<String>> {
     let from = OffsetDateTime::format(beginning, &Rfc3339).context("Couldn't format 'from'.")?;
 
-    let provider = yahoo::YahooConnector::new()?;
+    // Provide some context, which is a list of symbols that were not fetched and which will be skipped.
+    let provider = yahoo::YahooConnector::new().context(format!(
+        "Couldn't connect to the Yahoo! API for the following chunk of symbols: {:?}",
+        symbols
+    ))?;
+    // Alternatively, print them a little prettier.
     // let provider = match yahoo::YahooConnector::new() {
     //     Ok(connector) => connector,
-    //     // Err(_) => return Ok(Vec::from(symbols)),
     //     Err(_) => {
     //         let mut rows = vec![];
     //         for symbol in symbols {
@@ -104,7 +108,7 @@ pub async fn handle_symbol_data(
 pub fn start_writer() -> Result<Option<BufWriter<File>>> {
     let file_name = CSV_FILE_NAME.to_string();
     let mut file = File::create(&file_name)
-        .with_context(|| format!("Could not open target file \"{}\".", file_name))?;
+        .context(format!("Could not open target file \"{}\".", file_name))?;
     let _ = writeln!(&mut file, "{}", CSV_HEADER);
     let writer = Some(BufWriter::new(file));
     println!("Writer is started.");
@@ -119,7 +123,7 @@ pub fn write_to_csv(
     if let Some(file) = &mut writer {
         // let rows = all_rows.into_iter().flatten();
         for rows in all_rows {
-            let rows = rows.as_ref().unwrap(); // TODO: Handle properly
+            let rows = rows.as_ref().expect("Expected some rows to write.");
             for row in rows {
                 let _ = writeln!(file, "{}", row);
             }
