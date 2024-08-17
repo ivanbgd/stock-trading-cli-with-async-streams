@@ -22,13 +22,14 @@ pricing data and calculate key financial metrics in real time.
   the [Yahoo! Finance API](https://finance.yahoo.com/).
     - We are using the [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api) crate for this purpose, and it
       allows for both blocking and asynchronous way of work.
+    - [The official S&P 500 web page](https://www.spglobal.com/spdji/en/indices/equity/sp-500/#overview)
 - Data is fetched from the date that a user provides as a CLI argument to the current moment.
 - Users also provide symbols (tickers) that they want on the command line.
 - The fetched data include OLHC data (open, low, high, close prices), timestamp and volume, for each symbol.
 - The data that we extract from the received data are minimum, maximum and closing prices for each requested symbol,
   along with percent change and a simple moving average as a window function (over the 30-day period).
 - As can be seen, the calculations performed are not super-intensive.
-- We are implementing **MUCH MORE** than is required of us from the project description!
+- We are implementing **MUCH MORE** than is required of us in the project description!
 - The goal is to experiment:
     - with single-threaded synchronous (blocking) code,
     - with multithreaded synchronous (blocking) code,
@@ -51,7 +52,7 @@ pricing data and calculate key financial metrics in real time.
         - with various combinations of the above.
 - Some of that was suggested by the project author, and some of it (a lot of it) was added on own initiative.
     - Not everything is contained in the final commit.
-    - The repository commit history contains different implementations.
+    - The repository's commit history contains all those different implementations.
 - The goal was also to create a web service for serving the requests for fetching of the data.
     - We can send the requests manually from the command line. We are not implementing a web client.
 
@@ -65,7 +66,7 @@ We also included comparison of different implementations.
 
 - We started with synchronous code, i.e., with a blocking implementation.
 - The implementation was single-threaded.
-- The [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api) crate that we used supports the blocking feature.
+- The [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api) crate that we use supports the blocking feature.
 - This implementation was slow.
 - Writing to file was not implemented at this stage.
 
@@ -136,15 +137,17 @@ We also included comparison of different implementations.
         - The functionality has been ported from the crate to the standard library.
     - *Note*: This implementation doesn't employ `rayon`.
     - Performance is the same as with explicit concurrency with `async/await` or with `rayon`.
-        - The sweet spot for the chunk size is again 5, and that yields execution time of `1.2` s.
+        - The sweet spot for the chunk size is again 5, and it yields execution time of `1.2` s.
 - Wrapping `symbols` in `std::sync::Arc` and using `std::thread::scope` provides a working solution that is almost as
   fast as other fast multithreading solutions.
 - We can conclude that `rayon` and `Tokio` provide equal performance in our case, and the standard library MT solution
   is more or less of the same speed in our case.
 - A higher CPU utilization can be observed with chunk size of 5 than with chunk size of 128, for example, which is good,
   as it leads to higher efficiency.
-- All measurements were performed with 503 S&P symbols provided.
+- All measurements were performed with the 503 S&P symbols provided.
     - Comments in code also assume all 503 symbols.
+    - The official list of tickers changes from time to time, so our list can be updated accordingly
+      (see the **Notes on Data** section below).
 - If only 10 symbols are provided, instead of 503, then the fastest solution is with chunk size of 1, around `250` ms.
     - Chunk size of 5 is slower, around `600` ms.
     - Chunk sizes of 10 or 128 are very slow, over `1` s!
@@ -218,10 +221,10 @@ We also included comparison of different implementations.
             - This includes flushing of the buffer to file with every chunk, which makes it possible to write all rows
               to the file, and to still get an even better performance in terms of execution speed.
             - We are using `std::io::BufWriter` to improve the write performance. It wouldn't make sense to flush the
-              buffer unless we work with chunks of symbols, i.e., it wouldn't make sense to flush it for a single
-              symbol, although, that would make the solution correct because it would write all rows to the file. Still,
-              to have both good performance and a correct solution, we should use chunks and flush the buffer for every
-              chunk.
+              buffer unless we worked with chunks of symbols, i.e., it wouldn't make sense to flush it for a single
+              symbol, although, that would make the solution correct because it would write all rows to the file.
+              Still, to have both good performance and a correct solution, we should use chunks and flush the buffer
+              for every chunk.
         - Using `rayon` is at least equally fast, but probably not faster.
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
@@ -294,10 +297,17 @@ Most of those were provided by the course author, but were modified where it mad
 ## Notes on Data
 
 - List of S&P 500 symbols (tickers) can be found at:
-    - https://github.com/datasets/s-and-p-500-companies/blob/main/data/constituents.csv
     - https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
-- The alphabetically-sorted list is provided in [sp500_feb_2024.csv](sp500_feb_2024.csv).
+    - https://github.com/datasets/s-and-p-500-companies/blob/main/data/constituents.csv
+    - The lists are not necessarily up-to-date.
+- The alphabetically-sorted list is provided in [sp500_2024_aug.csv](sp500_2024_aug.csv).
     - There are 503 symbols in it.
+    - Keep in mind that some symbols come and go to/from the S&P 500 list.
+        - In case a symbol is not officially on the list, it will be ignored and consequently
+          not shown in the output, be it in `stdout` or in the generated `output.csv`.
+        - The official list should be looked up from time to time and the input CSV file in this repository,
+          that contains the list, should be updated accordingly.
+            - The file's name intentionally contains the date when it was constructed.
 - The output is not in the same order as input because of concurrent execution of futures.
 
 ## The Most Notable Crates Used
@@ -324,7 +334,7 @@ The `git` commit history contains descriptive comments.
 - The application requires the `from` and the `symbols` arguments.
 - The `from` date and time argument should be provided in the [RFC3339](https://datatracker.ietf.org/doc/html/rfc3339)
   format.
-- The `symbols` argument should contain comma-separated S&P symbols (tickers), with no blanks.
+- The `symbols` argument should contain comma-separated S&P symbols (tickers), with no blanks between them.
 - The `to` date and time are assumed as the current time instant, at the moment of execution of each iteration of the
   loop (at each new interval).
 - The examples below demonstrate how to run the app.
@@ -353,16 +363,22 @@ period start,symbol,price,change %,min,max,30d avg
 Took 278.264ms to complete.
 ```
 
+Symbols (tickers) added in 2024:
+
+```shell
+$ cargo run -- --from 2024-01-01T12:00:09+00:00 --symbols KKR,CRWD,GDDY,VST,GEV,SOLV,SMCI,DECK
+```
+
 ### Example 2: Provide All Symbols From a File
 
 ```shell
-$ cargo run -- --from 2023-07-03T12:00:09+00:00 --symbols "$(cat sp500_feb_2024.csv)"
+$ cargo run -- --from 2024-07-03T12:00:09+00:00 --symbols "$(cat sp500_2024_aug.csv)"
 ```
 
 Or, equivalently:
 
 ```shell
-$ export SYMBOLS="$(cat sp500_feb_2024.csv)" && cargo run -- --from 2023-07-03T12:00:09+00:00 --symbols $SYMBOLS
+$ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T12:00:09+00:00 --symbols $SYMBOLS
 ```
 
 ## Conclusion
@@ -383,7 +399,7 @@ TODO:     - This proved to be the fastest solution for this concrete problem.
 
 - Find a way to measure time correctly when working with async/await and/or with Actors.
 - Add tracing or at least logging.
-- Fully implement graceful stopping and shutdown after receiving the shutdown signal, `CTRL`-`C`.
+- Fully implement graceful stopping and shutdown after receiving the shutdown signal, `CTRL`+`C`.
     - It's only partly implemented.
     - We should broadcast the shutdown signal to all tasks, however they are implemented.
         - In case of actors, which is considered our main implementation, we should broadcast the signal to all actors,
