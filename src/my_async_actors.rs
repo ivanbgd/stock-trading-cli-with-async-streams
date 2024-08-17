@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
@@ -173,7 +173,7 @@ impl Actor<MsgResponseType> for UniversalActor {
             } => {
                 Self::handle_quote_requests_msg(symbols, from, to, writer_handle)
                     .await
-                    .unwrap(); // TODO: handle properly
+                    .expect("Expected some result from `handle_quote_requests_msg()`");
             }
             ActorMessage::SymbolsClosesMsg {
                 symbols_closes,
@@ -197,13 +197,16 @@ impl UniversalActor {
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
     /// we don't break the program but rather continue.
+    ///
+    /// # Errors
+    /// - [yahoo_finance_api::YahooError](https://docs.rs/yahoo_finance_api/2.2.1/yahoo_finance_api/enum.YahooError.html)
     async fn handle_quote_requests_msg(
         symbols: Vec<String>,
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
     ) -> Result<MsgResponseType> {
-        let provider = yahoo::YahooConnector::new()?;
+        let provider = yahoo::YahooConnector::new().context(format!("Skipping: {:?}", symbols))?;
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
 
@@ -211,7 +214,7 @@ impl UniversalActor {
             let closes = match Self::fetch_closing_data(&symbol, from, to, &provider).await {
                 Ok(closes) => closes,
                 Err(err) => {
-                    println!(
+                    eprintln!(
                         "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
                          skipping the symbol.",
                         err, symbol
@@ -234,7 +237,7 @@ impl UniversalActor {
         actor_handle
             .send(symbols_closes_msg)
             .await
-            .expect("Couldn't send a message to the ProcessorActor.");
+            .context("Couldn't send a message to the ProcessorActor.")?;
 
         Ok(())
     }
