@@ -22,11 +22,8 @@ async fn fetch_closing_data(
     end: OffsetDateTime,
     provider: &yahoo::YahooConnector,
 ) -> Result<Vec<f64>> {
-    // ) -> std::io::Result<Vec<f64>> {
     let response = provider.get_quote_history(symbol, beginning, end).await?;
-    // .map_err(|_| Error::from(ErrorKind::InvalidData))?;
     let mut quotes = response.quotes()?;
-    // .map_err(|_| Error::from(ErrorKind::InvalidData))?;
     if !quotes.is_empty() {
         quotes.sort_by_cached_key(|k| k.timestamp);
         Ok(quotes.iter().map(|q| q.adjclose).collect())
@@ -47,22 +44,20 @@ pub async fn handle_symbol_data(
     beginning: OffsetDateTime,
     end: OffsetDateTime,
 ) -> Result<Vec<String>> {
-    let from =
-        // OffsetDateTime::format(beginning, &Rfc3339).context("Couldn't format 'from'.")?;
-        OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'.");
+    let from = OffsetDateTime::format(beginning, &Rfc3339).context("Couldn't format 'from'.")?;
 
-    // let provider = yahoo::YahooConnector::new()?;
-    let provider = match yahoo::YahooConnector::new() {
-        Ok(connector) => connector,
-        // Err(_) => return Ok(Vec::from(symbols)),
-        Err(_) => {
-            let mut rows = vec![];
-            for symbol in symbols {
-                rows.push(format!("{},{}", from, symbol));
-            }
-            return Ok(rows);
-        }
-    };
+    let provider = yahoo::YahooConnector::new()?;
+    // let provider = match yahoo::YahooConnector::new() {
+    //     Ok(connector) => connector,
+    //     // Err(_) => return Ok(Vec::from(symbols)),
+    //     Err(_) => {
+    //         let mut rows = vec![];
+    //         for symbol in symbols {
+    //             rows.push(format!("{},{}", from, symbol));
+    //         }
+    //         return Ok(rows);
+    //     }
+    // };
 
     let mut rows = vec![];
 
@@ -104,15 +99,12 @@ pub async fn handle_symbol_data(
     }
 
     Ok(rows)
-    // rows
 }
 
-// pub fn start_writer() -> Option<BufWriter<File>> {
 pub fn start_writer() -> Result<Option<BufWriter<File>>> {
     let file_name = CSV_FILE_NAME.to_string();
     let mut file = File::create(&file_name)
         .with_context(|| format!("Could not open target file \"{}\".", file_name))?;
-    // .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", file_name));
     let _ = writeln!(&mut file, "{}", CSV_HEADER);
     let writer = Some(BufWriter::new(file));
     println!("Writer is started.");
@@ -134,7 +126,6 @@ pub fn write_to_csv(
         }
         file.flush()
             .context("Failed to flush to file. Data loss :/")?;
-        // .expect("Failed to flush to file. Data loss :/");
     }
     Ok(())
 }
@@ -144,7 +135,6 @@ pub fn stop_writer(mut writer: Option<BufWriter<File>>) -> Result<()> {
         writer
             .flush()
             .context("Failed to flush writer. Data loss :(")?;
-        // .expect("Failed to flush writer. Data loss :(")
     };
     println!("Writer is flushed and properly stopped.");
     Ok(())
