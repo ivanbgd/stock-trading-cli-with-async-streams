@@ -26,7 +26,7 @@ use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 ///
 /// There is no expected response.
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), anyhow::Error>")]
 pub struct QuoteRequestsMsg {
     pub chunk: Vec<String>,
     pub from: OffsetDateTime,
@@ -48,7 +48,9 @@ impl FetchActor {
     ///
     /// # Returns
     /// - Vector of closing prices in case of no error, or,
-    /// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.1.0/yahoo_finance_api/enum.YahooError.html)
+    ///
+    /// # Errors
+    /// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.2.1/yahoo_finance_api/enum.YahooError.html)
     ///   in case of an error.
     async fn fetch_closing_data(
         symbol: &str,
@@ -74,7 +76,7 @@ impl FetchActor {
 
 /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
 impl Handler<QuoteRequestsMsg> for FetchActor {
-    type Result = ();
+    type Result = Result<(), anyhow::Error>;
 
     /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
     ///
@@ -86,13 +88,13 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
     /// we don't break the program but rather continue.
-    fn handle(&mut self, msg: QuoteRequestsMsg, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: QuoteRequestsMsg, ctx: &mut Self::Context) -> anyhow::Result<()> {
         let symbols = msg.chunk;
         let from = msg.from;
         let to = msg.to;
         let writer_address = msg.writer_address;
 
-        let provider = yahoo::YahooConnector::new();
+        let provider = yahoo::YahooConnector::new()?;
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
 
@@ -124,6 +126,8 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         }
             .into_actor(self)
             .spawn(ctx);
+
+        Ok(())
     }
 }
 

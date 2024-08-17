@@ -1,7 +1,9 @@
+// use std::error::Error;
 // use std::sync::OnceLock;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use anyhow::{Context, Result};
 // use async_std::stream::{self, StreamExt};
 use clap::Parser;
 // use rayon::prelude::*;
@@ -13,6 +15,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 use crate::process::{handle_symbol_data, start_writer, write_to_csv};
+use crate::types::MsgResponseType;
 
 /// **The main loop**
 ///
@@ -26,10 +29,11 @@ use crate::process::{handle_symbol_data, start_writer, write_to_csv};
 ///
 /// Async code is also used for fetching and processing of data.
 // pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
-pub async fn main_loop() {
+pub async fn main_loop() -> Result<MsgResponseType> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
-        .expect("The provided date or time format isn't correct.");
+        .context("The provided date or time format isn't correct.")?;
+    // .expect("The provided date or time format isn't correct.");
 
     // let symbols: Vec<String> = args.symbols.split(',').map(|s| s.to_string()).collect();
     // // If we use rayon and its `par_iter()`, it doesn't make a difference in our case whether we use
@@ -57,7 +61,7 @@ pub async fn main_loop() {
 
     // let writer_handle = WriterActorHandle::new();
 
-    let mut writer = start_writer();
+    let mut writer = start_writer()?;
 
     // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
     let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
@@ -99,7 +103,7 @@ pub async fn main_loop() {
         }
         let rows = futures::future::join_all(handles).await;
         let rows = rows.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
-        write_to_csv(&mut writer, rows);
+        write_to_csv(&mut writer, rows)?;
 
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
 

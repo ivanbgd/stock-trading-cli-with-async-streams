@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
+use anyhow::Result;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
@@ -170,7 +171,9 @@ impl Actor<MsgResponseType> for UniversalActor {
                 to,
                 writer_handle,
             } => {
-                Self::handle_quote_requests_msg(symbols, from, to, writer_handle).await;
+                Self::handle_quote_requests_msg(symbols, from, to, writer_handle)
+                    .await
+                    .unwrap(); // TODO: handle properly
             }
             ActorMessage::SymbolsClosesMsg {
                 symbols_closes,
@@ -199,8 +202,8 @@ impl UniversalActor {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
-    ) -> MsgResponseType {
-        let provider = yahoo::YahooConnector::new();
+    ) -> Result<MsgResponseType> {
+        let provider = yahoo::YahooConnector::new()?;
 
         let mut symbols_closes: HashMap<String, Vec<f64>> = HashMap::with_capacity(symbols.len());
 
@@ -232,6 +235,8 @@ impl UniversalActor {
             .send(symbols_closes_msg)
             .await
             .expect("Couldn't send a message to the ProcessorActor.");
+
+        Ok(())
     }
 
     /// The [`SymbolsClosesMsg`] message handler for the processor [`UniversalActor`] actor
@@ -301,7 +306,9 @@ impl UniversalActor {
     ///
     /// # Returns
     /// - Vector of closing prices in case of no error, or,
-    /// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.1.0/yahoo_finance_api/enum.YahooError.html)
+    ///
+    /// # Errors
+    /// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.2.1/yahoo_finance_api/enum.YahooError.html)
     ///   in case of an error.
     async fn fetch_closing_data(
         symbol: &str,

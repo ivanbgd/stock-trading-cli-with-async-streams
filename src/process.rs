@@ -1,6 +1,7 @@
 use std::fs::File;
-use std::io::{BufWriter, Error, ErrorKind, Write};
+use std::io::{BufWriter, Write};
 
+use anyhow::{Context, Result};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -8,22 +9,24 @@ use yahoo_finance_api as yahoo;
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 
-/// Retrieve data from a data source and extract the closing prices
+/// Retrieves data for a single symbol from a data provider and extracts the closing prices
 ///
-/// Errors during download are mapped onto `io::Errors` as `InvalidData`.
+/// # Returns
+/// Vector of closing prices for the symbol and for the given period, if available
+///
+/// # Errors
+/// - [yahoo_finance_api::YahooError](https://docs.rs/yahoo_finance_api/2.2.1/yahoo_finance_api/enum.YahooError.html)
 async fn fetch_closing_data(
     symbol: &str,
     beginning: OffsetDateTime,
     end: OffsetDateTime,
     provider: &yahoo::YahooConnector,
-) -> std::io::Result<Vec<f64>> {
-    let response = provider
-        .get_quote_history(symbol, beginning, end)
-        .await
-        .map_err(|_| Error::from(ErrorKind::InvalidData))?;
-    let mut quotes = response
-        .quotes()
-        .map_err(|_| Error::from(ErrorKind::InvalidData))?;
+) -> Result<Vec<f64>> {
+    // ) -> std::io::Result<Vec<f64>> {
+    let response = provider.get_quote_history(symbol, beginning, end).await?;
+    // .map_err(|_| Error::from(ErrorKind::InvalidData))?;
+    let mut quotes = response.quotes()?;
+    // .map_err(|_| Error::from(ErrorKind::InvalidData))?;
     if !quotes.is_empty() {
         quotes.sort_by_cached_key(|k| k.timestamp);
         Ok(quotes.iter().map(|q| q.adjclose).collect())
@@ -34,13 +37,32 @@ async fn fetch_closing_data(
 
 /// Convenience function that chains together the entire processing chain
 ///
-/// We return a vector of rows with results.
+/// # Returns
+/// Vector of rows with results
+///
+/// # Errors
+/// - [yahoo_finance_api::YahooError](https://docs.rs/yahoo_finance_api/2.2.1/yahoo_finance_api/enum.YahooError.html)
 pub async fn handle_symbol_data(
     symbols: &[String],
     beginning: OffsetDateTime,
     end: OffsetDateTime,
-) -> Vec<String> {
-    let provider = yahoo::YahooConnector::new();
+) -> Result<Vec<String>> {
+    let from =
+        // OffsetDateTime::format(beginning, &Rfc3339).context("Couldn't format 'from'.")?;
+        OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'.");
+
+    // let provider = yahoo::YahooConnector::new()?;
+    let provider = match yahoo::YahooConnector::new() {
+        Ok(connector) => connector,
+        // Err(_) => return Ok(Vec::from(symbols)),
+        Err(_) => {
+            let mut rows = vec![];
+            for symbol in symbols {
+                rows.push(format!("{},{}", from, symbol));
+            }
+            return Ok(rows);
+        }
+    };
 
     let mut rows = vec![];
 
@@ -57,15 +79,15 @@ pub async fn handle_symbol_data(
                 window_size: WINDOW_SIZE,
             };
 
-            let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
-            let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
             let last_price = *closes.last().expect("Expected non-empty closes.");
             let (_, pct_change) = price_diff.calculate(&closes).await.unwrap_or((0., 0.));
+            let period_min: f64 = min.calculate(&closes).await.unwrap_or_default();
+            let period_max: f64 = max.calculate(&closes).await.unwrap_or_default();
             let sma = n_window_sma.calculate(&closes).await.unwrap_or(vec![]);
 
             let row = format!(
                 "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                OffsetDateTime::format(beginning, &Rfc3339).expect("Couldn't format 'from'."),
+                from,
                 symbol,
                 last_price,
                 pct_change * 100.0,
@@ -81,37 +103,49 @@ pub async fn handle_symbol_data(
         }
     }
 
-    rows
+    Ok(rows)
+    // rows
 }
 
-pub fn start_writer() -> Option<BufWriter<File>> {
+// pub fn start_writer() -> Option<BufWriter<File>> {
+pub fn start_writer() -> Result<Option<BufWriter<File>>> {
     let file_name = CSV_FILE_NAME.to_string();
     let mut file = File::create(&file_name)
-        .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", file_name));
+        .with_context(|| format!("Could not open target file \"{}\".", file_name))?;
+    // .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", file_name));
     let _ = writeln!(&mut file, "{}", CSV_HEADER);
     let writer = Some(BufWriter::new(file));
     println!("Writer is started.");
 
-    writer
+    Ok(writer)
 }
 
-pub fn write_to_csv(mut writer: &mut Option<BufWriter<File>>, all_rows: Vec<&Vec<String>>) {
+pub fn write_to_csv(
+    mut writer: &mut Option<BufWriter<File>>,
+    all_rows: Vec<&Result<Vec<String>>>,
+) -> Result<()> {
     if let Some(file) = &mut writer {
-        // let rows = rows.iter().flatten();
+        // let rows = all_rows.into_iter().flatten();
         for rows in all_rows {
+            let rows = rows.as_ref().unwrap(); // TODO: Handle properly
             for row in rows {
                 let _ = writeln!(file, "{}", row);
             }
         }
-        file.flush().expect("Failed to flush to file. Data loss :/");
+        file.flush()
+            .context("Failed to flush to file. Data loss :/")?;
+        // .expect("Failed to flush to file. Data loss :/");
     }
+    Ok(())
 }
 
-pub fn stop_writer(mut writer: Option<BufWriter<File>>) {
+pub fn stop_writer(mut writer: Option<BufWriter<File>>) -> Result<()> {
     if let Some(writer) = &mut writer {
         writer
             .flush()
-            .expect("Failed to flush writer. Data loss :(")
+            .context("Failed to flush writer. Data loss :(")?;
+        // .expect("Failed to flush writer. Data loss :(")
     };
     println!("Writer is flushed and properly stopped.");
+    Ok(())
 }
