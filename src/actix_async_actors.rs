@@ -103,7 +103,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
                 let closes = match FetchActor::fetch_closing_data(&symbol, from, to, &provider).await {
                     Ok(closes) => closes,
                     Err(err) => {
-                        println!(
+                        eprintln!(
                             "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
                             skipping the symbol.",
                             err, symbol

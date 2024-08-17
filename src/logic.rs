@@ -1,20 +1,19 @@
-// use std::error::Error;
-// use std::sync::OnceLock;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+// use std::error::Error;
+// use std::sync::OnceLock;
 use anyhow::{Context, Result};
 // use async_std::stream::{self, StreamExt};
 use clap::Parser;
 use rayon::prelude::*;
-// use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 // use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::process::{handle_symbol_data, start_writer, write_to_csv};
+use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::types::MsgResponseType;
 
 /// **The main loop**
@@ -48,8 +47,8 @@ pub async fn main_loop() -> Result<MsgResponseType> {
     static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
     // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
     let symbols = SYMBOLS.get_or_init(|| symbols);
-    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
-                                                                                      // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
+    // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
+    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
 
     // // We need to ensure that we have one and only one `WriterActor` - a singleton.
     // // This is because it writes to a file, and writing to a shared object,
@@ -61,9 +60,9 @@ pub async fn main_loop() -> Result<MsgResponseType> {
     // // by using a single writer actor.
     // let writer_address = WriterActor::new().start();
 
-    // let writer_handle = WriterActorHandle::new();
+    let writer_handle = WriterActorHandle::new();
 
-    let mut writer = start_writer()?;
+    // let mut writer = start_writer()?;
 
     // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
     let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
@@ -99,40 +98,41 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // let rows = rows.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
         // write_to_csv(&mut writer, rows)?;
 
-        // rayon: 0.8-0.9 s (new computer); was 1.0 s
-        let queries: Vec<_> = chunks_of_symbols
-            .par_iter()
-            .map(|chunk| handle_symbol_data(chunk, from, to))
-            .collect();
-        let rows = futures::future::join_all(queries).await;
-        let rows = rows.iter().map(|r| r).collect::<Vec<_>>();
-        write_to_csv(&mut writer, rows)?;
+        // // rayon: 0.8-0.9 s (new computer); was 1.0 s
+        // let queries: Vec<_> = chunks_of_symbols
+        //     .par_iter()
+        //     .map(|chunk| handle_symbol_data(chunk, from, to))
+        //     .collect();
+        // let rows = futures::future::join_all(queries).await;
+        // let rows = rows.iter().map(|r| r).collect::<Vec<_>>();
+        // write_to_csv(&mut writer, rows)?;
 
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
 
         // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
-        // This is fast! Possibly even below a second.
+        // This is fast!
+        // Unfortunately, we can't measure its execution time.
 
-        // // We start multiple instances of `Actor` - one per chunk of symbols,
-        // // and they will start the next `Actor` in the process - one each.
-        // // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
-        // //
-        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
-        // for chunk in chunks_of_symbols.clone() {
-        //     let actor_handle = UniversalActorHandle::new();
-        //     let _ = actor_handle
-        //         .send(ActorMessage::QuoteRequestsMsg {
-        //             symbols: chunk.into(),
-        //             from,
-        //             to,
-        //             writer_handle: writer_handle.clone(),
-        //         })
-        //         .await;
-        // }
+        // We start multiple instances of `Actor` - one per chunk of symbols,
+        // and they will start the next `Actor` in the process - one each.
+        // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
+        //
+        // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+        // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+        // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
+        for chunk in chunks_of_symbols.clone() {
+            let actor_handle = UniversalActorHandle::new();
+            let _ = actor_handle
+                .send(ActorMessage::QuoteRequestsMsg {
+                    symbols: chunk.into(),
+                    from,
+                    to,
+                    writer_handle: writer_handle.clone(),
+                })
+                .await;
+        }
 
-        // // With rayon. Same speed as without rayon; fast (chunks or par_chunks don't make a difference).
+        // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
         //
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
@@ -142,6 +142,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         //                 symbols: (*chunk).into(),
         //                 from,
         //                 to,
+        //                 writer_handle: writer_handle.clone(),
         //                 // writer_address: writer_address.clone(),
         //             })
         //             .await
