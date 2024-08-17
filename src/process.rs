@@ -48,20 +48,9 @@ pub async fn handle_symbol_data(
 
     // Provide some context, which is a list of symbols that were not fetched and which will be skipped.
     let provider = yahoo::YahooConnector::new().context(format!(
-        "Couldn't connect to the Yahoo! API for the following chunk of symbols: {:?}",
+        "Couldn't construct the `YahooConnector` for the following chunk of symbols; skipping them: {:?}",
         symbols
     ))?;
-    // Alternatively, print them a little prettier.
-    // let provider = match yahoo::YahooConnector::new() {
-    //     Ok(connector) => connector,
-    //     Err(_) => {
-    //         let mut rows = vec![];
-    //         for symbol in symbols {
-    //             rows.push(format!("{},{}", from, symbol));
-    //         }
-    //         return Ok(rows);
-    //     }
-    // };
 
     let mut rows = vec![];
 
