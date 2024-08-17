@@ -144,11 +144,11 @@ We also included comparison of different implementations.
   is more or less of the same speed in our case.
 - A higher CPU utilization can be observed with chunk size of 5 than with chunk size of 128, for example, which is good,
   as it leads to higher efficiency.
-- All measurements were performed with the 503 S&P symbols provided.
-    - Comments in code also assume all 503 symbols.
+- All measurements were performed with the 505 S&P symbols provided.
+    - Comments in code also assume all 505 symbols.
     - The official list of tickers changes from time to time, so our list can be updated accordingly
       (see the **Notes on Data** section below).
-- If only 10 symbols are provided, instead of 503, then the fastest solution is with chunk size of 1, around `250` ms.
+- If only 10 symbols are provided, instead of 505, then the fastest solution is with chunk size of 1, around `250` ms.
     - Chunk size of 5 is slower, around `600` ms.
     - Chunk sizes of 10 or 128 are very slow, over `1` s!
 - We are probably limited by the data-fetching time from the Yahoo! Finance API. That's probably our bottleneck.
@@ -228,7 +228,7 @@ We also included comparison of different implementations.
         - Using `rayon` is at least equally fast, but probably not faster.
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
-    - With async code it was not possible to have the `WriterActor` write out all 503 rows, i.e., performance
+    - With async code it was not possible to have the `WriterActor` write out all 505 rows, i.e., performance
       indicators for all symbols, in the file, if we only flushed when stopping the actor, i.e., in its `stopped`
       method.
         - Namely, we stop the main loop, which is infinite, by interrupting program by pressing `CTRL+C`, so
@@ -239,7 +239,7 @@ We also included comparison of different implementations.
     - By adding flushing of the buffer to the file in the `WriterActor`'s `handle` method, we are able to solve this
       issue.
         - We do this in case the `WriterActor` also works with *chunks*.
-    - All 503 rows do get printed to `stdout` regardless of the `WriterActor`, as the output to console is handled by
+    - All 505 rows do get printed to `stdout` regardless of the `WriterActor`, as the output to console is handled by
       the `ProcessorActor`.
 - We experimented with the Publisher/Subscriber model with the `Actix` framework, to get a feel of it.
     - The Publisher/Subscriber model is generally better suited to applications that have a number of different
@@ -301,7 +301,7 @@ Most of those were provided by the course author, but were modified where it mad
     - https://github.com/datasets/s-and-p-500-companies/blob/main/data/constituents.csv
     - The lists are not necessarily up-to-date.
 - The alphabetically-sorted list is provided in [sp500_2024_aug.csv](sp500_2024_aug.csv).
-    - There are 503 symbols in it.
+    - There are 505 symbols in it.
     - Keep in mind that some symbols come and go to/from the S&P 500 list.
         - In case a symbol is not officially on the list, it will be ignored and consequently
           not shown in the output, be it in `stdout` or in the generated `output.csv`.
