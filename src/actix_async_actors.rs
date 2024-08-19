@@ -11,6 +11,7 @@ use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
+use crate::types::MsgResponseType;
 
 // ============================================================================
 //
@@ -26,7 +27,7 @@ use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 ///
 /// There is no expected response.
 #[derive(Message)]
-#[rtype(result = "Result<(), anyhow::Error>")]
+#[rtype(result = "Result<MsgResponseType, anyhow::Error>")]
 pub struct QuoteRequestsMsg {
     pub chunk: Vec<String>,
     pub from: OffsetDateTime,
@@ -76,7 +77,7 @@ impl FetchActor {
 
 /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
 impl Handler<QuoteRequestsMsg> for FetchActor {
-    type Result = Result<(), anyhow::Error>;
+    type Result = Result<MsgResponseType, anyhow::Error>;
 
     /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
     ///
@@ -88,7 +89,11 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
     /// we don't break the program but rather continue.
-    fn handle(&mut self, msg: QuoteRequestsMsg, ctx: &mut Self::Context) -> anyhow::Result<()> {
+    fn handle(
+        &mut self,
+        msg: QuoteRequestsMsg,
+        ctx: &mut Self::Context,
+    ) -> anyhow::Result<MsgResponseType> {
         let symbols = msg.chunk;
         let from = msg.from;
         let to = msg.to;
@@ -146,7 +151,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 ///
 /// There is no expected response.
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "MsgResponseType")]
 struct SymbolsClosesMsg {
     pub symbols_closes: HashMap<String, Vec<f64>>,
     pub from: OffsetDateTime,
@@ -162,7 +167,7 @@ impl Actor for ProcessorActor {
 
 /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
 impl Handler<SymbolsClosesMsg> for ProcessorActor {
-    type Result = ();
+    type Result = MsgResponseType;
 
     /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
     ///
@@ -255,7 +260,7 @@ struct PerformanceIndicatorsRow {
 ///
 /// There is no expected response.
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "MsgResponseType")]
 struct PerformanceIndicatorsRowsMsg {
     pub from: String,
     pub rows: Vec<PerformanceIndicatorsRow>,
@@ -302,7 +307,7 @@ impl Actor for WriterActor {
 
 /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
 impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
-    type Result = ();
+    type Result = MsgResponseType;
 
     fn handle(
         &mut self,
