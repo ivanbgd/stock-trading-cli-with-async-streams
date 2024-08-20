@@ -1,3 +1,20 @@
+//! The main loop
+//!
+//! The commented-out code is not dead code.
+//!
+//! Namely, this file contains several different implementations:
+//! - async without Actors,
+//! - my implementation of the Actor model,
+//! - the Actix Actor framework.
+//!
+//! Naturally, only one implementation works at a time, so other need to be commented-out.
+//!
+//! They also use different imports, again, naturally - at least some are different.
+//!
+//! The purpose of this file, and the whole project for that matter, is to experiment
+//! with different implementations and try out different things, so it was not meant to
+//! look super-nice, but still care has been taken to some extent.
+
 #![allow(unused_imports)]
 
 use std::sync::OnceLock;
@@ -6,7 +23,7 @@ use std::time::{Duration, Instant};
 use actix::Actor;
 use anyhow::{Context, Result};
 use clap::Parser;
-use rayon::prelude::*;
+// use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
@@ -49,6 +66,13 @@ pub async fn main_loop() -> Result<MsgResponseType> {
     // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
     let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
 
+    // Use with async without Actors
+    // let mut writer = start_writer()?;
+
+    // Use with my Actor implementation
+    let writer_handle = WriterActorHandle::new();
+
+    // Use with Actix Actor implementation
     // We need to ensure that we have one and only one `WriterActor` - a Singleton.
     // This is because it writes to a file, and writing to a shared object,
     // such as a file, needs to be synchronized, i.e., sequential.
@@ -59,14 +83,9 @@ pub async fn main_loop() -> Result<MsgResponseType> {
     // by using a single writer actor.
     // let writer_address = WriterActor::new().start();
 
-    let writer_handle = WriterActorHandle::new();
-
-    // let mut writer = start_writer()?;
-
     // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
     let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // for _ in 0..1 { // TODO: remove the FOR line
     // while let Some(_) = interval.next().await {
     loop {
         interval.tick().await;
@@ -149,6 +168,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
         // // Doesn't work after a breaking change in the yahoo_finance_api (in v2.2.1),
         // // as the compiler can no longer infer a type.
+        // TODO: Fix!
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| async {
@@ -220,62 +240,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         //     .collect();
         // let _ = futures::future::join_all(queries).await;
 
-        //
-        // OLD WITH ACTORS
-        //
-
-        // // This is not using rayon.
-        // // `actor_address` and `QuoteRequest` are not defined anymore, so this doesn't work.
-        // for chunk in chunks_of_symbols.clone() {
-        //     let chunk = chunk.to_vec();
-        //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
-        // }
-
-        // // This is using rayon.
-        // // `actor_address` is not defined anymore, so this doesn't work.
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| async {
-        //         actor_address
-        //             .send(QuoteRequestMsg {
-        //                 chunk: chunk.to_vec(),
-        //                 from,
-        //                 to,
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
-
-        //
-        // OLD WITHOUT ACTORS
-        //
-
-        // // THE FASTEST SOLUTION - 0.8 s on new computer with chunk size of 5 (1.2 s on old computer)
-        // // Explicit concurrency with async/await paradigm:
-        // // Run multiple instances of the same Future concurrently.
-        // // This is using rayon, and not Tokio.
-        // // This is NOT writing to file!
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| handle_symbol_data(chunk, from, to))
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await; // Vec<()>
-
-        // // THE FASTEST SOLUTION - 0.7 s on new computer with chunk size of 5 (1.2 s on old computer)
-        // // The `main()` function works with `#[tokio::main]` (0.7 s) or with `#[actix::main]` (0.8 s).
-        // // It also works with `#[async_std::main]` (0.8 s).
-        // // This is using Tokio, and not rayon.
-        // // This is NOT writing to file!
-        // let mut handles = vec![];
-        // for chunk in chunks_of_symbols.clone() {
-        //     let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
-        //     handles.push(handle);
-        // }
-        // let _ = futures::future::join_all(handles).await;
-
         println!();
-        // println!("Took {:.3?} to complete.", start.elapsed());
     }
 
     // println!("OUT!!!");
