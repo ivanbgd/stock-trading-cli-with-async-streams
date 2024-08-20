@@ -55,6 +55,9 @@ pricing data and calculate key financial metrics in real time.
     - The repository's commit history contains all those different implementations.
 - The goal was also to create a web service for serving the requests for fetching of the data.
     - We can send the requests manually from the command line. We are not implementing a web client.
+- We measured execution time for various implementations.
+    - Some of those results are mentioned in this document, and some are present in code,
+      in [logic.rs](./src/logic.rs) - it contains newer information.
 
 ## Implementation Notes and Conclusions
 
@@ -113,7 +116,6 @@ We also included comparison of different implementations.
       the `async/await` paradigm is a good choice in this case.
 - We are using `async` streams for improved efficiency (`async` streaming on a schedule).
 - Unit tests are also asynchronous.
-- We couldn't measure execution time properly in case of asynchronous code.
 - Writing to file was not implemented at this stage.
 
 ### Asynchronous Multithreaded Implementation
@@ -397,19 +399,29 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T1
 - There are some light calculations taking place, but I believe that the application is more on the I/O-bound side.
 - The `async/await` paradigm copes well with this kind of application.
 - We also implemented the Actor Model. It uses message passing between actors.
+    - Actors slow down execution a little, but not too much in case of this application.
+    - They work quite nicely and can be configured and customized to our liking.
+    - We were able to use third-party Actor frameworks, as well as our own implementation.
+        - Actix and our implementation didn't show much difference in performance in this application, if any.
+    - Actors can be combined with `rayon`.
 - Working with *chunks* of data instead of with individual pieces of data improves performance.
     - Not all chunk sizes perform the same, so we need to find a sweet spot - an optimal chunk size.
 - It probably helps even more so in a distributed setting (a distributed network of nodes) to send larger messages,
   than smaller ones, in both ways, which means to work with chunks instead of individual symbols.
-- We couldn't measure execution time properly in case of Actors with asynchronous code.
-    - Perhaps we could send `start` time in a message and ultimately forward it to the Writer Actor which
-      would then calculate and print the execution time after it has written results to the file in each iteration.
-
-TODO:     - This proved to be the fastest solution for this concrete problem.
+- We couldn't measure execution time 100% properly in case of Actors with asynchronous code, but it's close.
+    - Namely, we send `start` time in a message and ultimately forward it to the Writer Actor which
+      then calculates and prints the execution time after it has written results to the file in each iteration,
+      but, it does so on a per-chunk basis, which slows execution down a little,
+      and doesn't look quite nice in the output.
+    - Writing to file happens on a per-chunk basis regardless of time measurement, so it's just the multiple
+      printouts, instead of a single printout per iteration, that slow down execution just a little bit, and it
+      doesn't look quite nice, but it means to us to measure execution time, so we can neglect those
+      small inconveniences.
+- The fastest solution is asynchronous (using `tokio`) without actors, but very close to it is asynchronous solution
+  using `rayon` without actors.
 
 ## Potential Modifications, Improvements or Additions
 
-- Find a way to measure time correctly when working with async/await and/or with Actors.
 - Add tracing or at least logging.
 - Fully implement graceful stopping and shutdown after receiving the shutdown signal, `CTRL`+`C`.
     - It's only partly implemented.

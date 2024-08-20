@@ -2,9 +2,12 @@
 //!
 //! Requires `#[tokio::main]`.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use time::format_description::well_known::Rfc3339;
@@ -132,11 +135,13 @@ pub enum ActorMessage {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        start: Instant,
     },
     SymbolsClosesMsg {
         symbols_closes: HashMap<String, Vec<f64>>,
         from: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        start: Instant,
     },
 }
 
@@ -174,8 +179,9 @@ impl Actor<MsgResponseType> for UniversalActor {
                 from,
                 to,
                 writer_handle,
+                start,
             } => {
-                Self::handle_quote_requests_msg(symbols, from, to, writer_handle)
+                Self::handle_quote_requests_msg(symbols, from, to, writer_handle, start)
                     .await
                     .expect("Expected some result from `handle_quote_requests_msg()`");
             }
@@ -183,8 +189,9 @@ impl Actor<MsgResponseType> for UniversalActor {
                 symbols_closes,
                 from,
                 writer_handle,
+                start,
             } => {
-                Self::handle_symbols_closes_msg(symbols_closes, from, writer_handle).await;
+                Self::handle_symbols_closes_msg(symbols_closes, from, writer_handle, start).await;
             }
         }
     }
@@ -209,6 +216,7 @@ impl UniversalActor {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        start: Instant,
     ) -> Result<MsgResponseType> {
         let provider = yahoo::YahooConnector::new().context(format!("Skipping: {:?}", symbols))?;
 
@@ -234,6 +242,7 @@ impl UniversalActor {
             symbols_closes,
             from,
             writer_handle,
+            start,
         };
 
         // Spawn another Actor and send it the message.
@@ -254,6 +263,7 @@ impl UniversalActor {
         symbols_closes: HashMap<String, Vec<f64>>,
         from: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        start: Instant,
     ) -> MsgResponseType {
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
 
@@ -300,7 +310,7 @@ impl UniversalActor {
             }
         }
 
-        let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
+        let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows, start };
 
         // Send the message to the single writer actor.
         writer_handle
@@ -410,6 +420,7 @@ struct PerformanceIndicatorsRow {
 pub struct PerformanceIndicatorsRowsMsg {
     from: String,
     rows: Vec<PerformanceIndicatorsRow>,
+    start: Instant,
 }
 
 /// Actor for writing calculated performance indicators for fetched stock data into a CSV file
@@ -473,9 +484,12 @@ impl Actor<MsgResponseType> for WriterActor {
     }
 
     /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
+    ///
+    /// Writes results to file and measures & prints the iteration's execution time.
     async fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> MsgResponseType {
         let from = msg.from;
         let rows = msg.rows;
+        let start = msg.start;
 
         if let Some(file) = &mut self.writer {
             for row in rows {
@@ -494,6 +508,8 @@ impl Actor<MsgResponseType> for WriterActor {
 
             file.flush().expect("Failed to flush to file. Data loss :/");
         }
+
+        println!("Took {:.3?} to complete.\n", start.elapsed());
     }
 }
 

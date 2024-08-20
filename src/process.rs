@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use time::format_description::well_known::Rfc3339;
@@ -105,9 +106,15 @@ pub fn start_writer() -> Result<Option<BufWriter<File>>> {
     Ok(writer)
 }
 
+/// Writes results to file and measures & prints the iteration's execution time.
+///
+/// We don't have to measure execution time in this function.
+/// We can measure it in the main loop instead.
+/// Still, to be consistent with the asynchronous implementations, we measure it here.
 pub fn write_to_csv(
     mut writer: &mut Option<BufWriter<File>>,
     all_rows: Vec<&Result<Vec<String>>>,
+    start: Instant,
 ) -> Result<()> {
     if let Some(file) = &mut writer {
         // let rows = all_rows.into_iter().flatten();
@@ -120,6 +127,9 @@ pub fn write_to_csv(
         file.flush()
             .context("Failed to flush to file. Data loss :/")?;
     }
+
+    println!("Took {:.3?} to complete.\n", start.elapsed());
+
     Ok(())
 }
 

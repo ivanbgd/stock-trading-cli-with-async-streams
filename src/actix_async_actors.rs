@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::time::Instant;
 
 use actix::{
     Actor, ActorContext, Addr, Context, ContextFutureSpawner, Handler, Message, WrapFuture,
@@ -37,6 +38,7 @@ pub struct QuoteRequestsMsg {
     pub from: OffsetDateTime,
     pub to: OffsetDateTime,
     pub writer_address: Addr<WriterActor>,
+    pub start: Instant,
 }
 
 /// Actor that downloads stock data for a specified symbol and period
@@ -105,6 +107,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         let from = msg.from;
         let to = msg.to;
         let writer_address = msg.writer_address;
+        let start = msg.start;
 
         let provider = yahoo::YahooConnector::new()?;
 
@@ -127,7 +130,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
                 symbols_closes.insert(symbol, closes);
             }
 
-            let symbols_closes_msg = SymbolsClosesMsg { symbols_closes, from, writer_address };
+            let symbols_closes_msg = SymbolsClosesMsg { symbols_closes, from, writer_address, start };
 
             // Spawn another Actor and send it the message.
             let proc_address = ProcessorActor.start();
@@ -163,6 +166,7 @@ struct SymbolsClosesMsg {
     pub symbols_closes: HashMap<String, Vec<f64>>,
     pub from: OffsetDateTime,
     pub writer_address: Addr<WriterActor>,
+    start: Instant,
 }
 
 /// Actor for creating performance indicators from fetched stock data
@@ -184,6 +188,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
         let symbols_closes = msg.symbols_closes;
         let from = msg.from;
         let writer_address = msg.writer_address;
+        let start = msg.start;
 
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
 
@@ -231,7 +236,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
                 }
             }
 
-            let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
+            let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows, start };
 
             // Send the message to the single writer actor.
             writer_address
@@ -271,6 +276,7 @@ struct PerformanceIndicatorsRow {
 struct PerformanceIndicatorsRowsMsg {
     pub from: String,
     pub rows: Vec<PerformanceIndicatorsRow>,
+    pub start: Instant,
 }
 
 /// Actor for writing calculated performance indicators for fetched stock data into a CSV file
@@ -319,6 +325,8 @@ impl Actor for WriterActor {
 }
 
 /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
+///
+/// Writes results to file and measures & prints the iteration's execution time.
 impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
     type Result = MsgResponseType;
 
@@ -329,6 +337,7 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
     ) -> Self::Result {
         let from = msg.from;
         let rows = msg.rows;
+        let start = msg.start;
 
         if let Some(file) = &mut self.writer {
             for row in rows {
@@ -347,5 +356,7 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
 
             file.flush().expect("Failed to flush to file. Data loss :/");
         }
+
+        println!("Took {:.3?} to complete.\n", start.elapsed());
     }
 }
