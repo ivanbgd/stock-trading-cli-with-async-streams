@@ -4,12 +4,10 @@ use stock::logic::main_loop;
 use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
 
+// #[async_std::main]
+// #[actix::main]
 #[tokio::main]
 async fn main() -> Result<MsgResponseType> {
-    // async fn main() -> Result<MsgResponseType, actix::MailboxError> {
-    // #[async_std::main]
-    // async fn main() -> Result<MsgResponseType, Box<dyn Error>> {
-    // async fn main() -> Result<MsgResponseType, anyhow::Error> {
     println!();
 
     main_loop().await?;

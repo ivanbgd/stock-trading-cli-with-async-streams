@@ -1,3 +1,7 @@
+//! My own asynchronous actor framework implementation
+//!
+//! Requires `#[tokio::main]`.
+
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -29,7 +33,7 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 ///
 /// The type [`R`] represents a response message type.
 ///
-/// All errors are handled inside methods - they are not propagated.
+/// Most errors are handled inside methods - they are not propagated.
 ///
 /// The [`tokio::sync::mpsc::error::SendError`] error type isn't
 /// informative; it doesn't return any useful piece of information.
@@ -196,7 +200,7 @@ impl UniversalActor {
     /// in which case it prints the error message to `stderr`.
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
-    /// we don't break the program but rather continue.
+    /// we don't break the program but rather continue, skipping the symbol.
     ///
     /// # Errors
     /// - [yahoo_finance_api::YahooError](https://docs.rs/yahoo_finance_api/2.2.1/yahoo_finance_api/enum.YahooError.html)
@@ -374,7 +378,7 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
 
     /// Send a message to an [`UniversalActor`] instance through the [`UniversalActorHandle`]
     async fn send(&self, msg: ActorMessage) -> Result<MsgResponseType, UniversalMsgErrorType> {
-        Ok(self.sender.send(msg).await?)
+        self.sender.send(msg).await
     }
 }
 
@@ -495,7 +499,7 @@ impl Actor<MsgResponseType> for WriterActor {
 
 impl Drop for WriterActor {
     fn drop(&mut self) {
-        let _ = self.stop();
+        self.stop();
     }
 }
 
@@ -543,6 +547,6 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
         &self,
         msg: PerformanceIndicatorsRowsMsg,
     ) -> Result<MsgResponseType, WriterMsgErrorType> {
-        Ok(self.sender.send(msg).await?)
+        self.sender.send(msg).await
     }
 }

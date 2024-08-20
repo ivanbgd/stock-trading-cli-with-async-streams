@@ -39,7 +39,7 @@ pricing data and calculate key financial metrics in real time.
         - with [actix](https://crates.io/crates/actix), as an Actor framework for Rust,
         - with [xactor](https://crates.io/crates/xactor), as another Actor framework for Rust,
         - with **our own** asynchronous implementation of Actors,
-        - TODO: with **our own** synchronous implementation of Actors,
+        - TODO/SKIP: with **our own** synchronous implementation of Actors (the problem is I/O-bound),
         - with a single actor that is responsible for downloading, processing, and printing of the processed data to
           console,
         - with two actors: the data-fetching one and the one that combines data processing and printing of results,
@@ -140,14 +140,14 @@ We also included comparison of different implementations.
         - The sweet spot for the chunk size is again 5, and it yields execution time of `1.2` s.
 - Wrapping `symbols` in `std::sync::Arc` and using `std::thread::scope` provides a working solution that is almost as
   fast as other fast multithreading solutions.
-- We can conclude that `rayon` and `Tokio` provide equal performance in our case, and the standard library MT solution
-  is more or less of the same speed in our case.
+- We can conclude that `rayon` and `Tokio` provide equal performance in our case, and that the standard library
+  MT solution is more or less of the same speed in our case.
 - A higher CPU utilization can be observed with chunk size of 5 than with chunk size of 128, for example, which is good,
   as it leads to higher efficiency.
 - All measurements were performed with the 505 S&P symbols provided.
     - Comments in code also assume all 505 symbols.
     - The official list of tickers changes from time to time, so our list can be updated accordingly
-      (see the **Notes on Data** section below).
+      (see the *Notes on Data* section below).
 - If only 10 symbols are provided, instead of 505, then the fastest solution is with chunk size of 1, around `250` ms.
     - Chunk size of 5 is slower, around `600` ms.
     - Chunk sizes of 10 or 128 are very slow, over `1` s!
@@ -158,7 +158,7 @@ We also included comparison of different implementations.
 - When we added writing to file, using `rayon` with chunk size equal 5 yielded execution time of `1.0`!
 - With writing to file, using `Tokio` with chunk size equal 5 yields execution time of `0.9` s!
 - TODO: With writing to file, `stdlib` with chunk size equal 5 yields execution time of ??? s!
-- TODO: With writing to file, using `crossbeam` with chunk size equal 5 yields execution time...
+- TODO/SKIP: With writing to file, using `crossbeam` with chunk size equal 5 yields execution time...
 - We used a barrier to write all results, from all threads, to the file at once.
 - TODO: We also implemented writing individual chunks, by individual threads, to the file, by using a lock.
     - TODO: Performance was the same as with barrier for writing all results at once. ?! CHECK!!!
@@ -167,6 +167,7 @@ We also included comparison of different implementations.
 
 - TODO: Using `rayon` with chunk size equal 5 yields execution time equal `1` second!
 - TODO: Using `crossbeam` with chunk size equal 5 yields execution time...
+    - `crossbeam` is best suited to CPU-bound tasks, while our task is I/O bound, so we could skip it this time around.
 - TODO: Using `stdlib` threading with chunk size equal 5 yields execution time...
 - Writing to file was implemented at this stage. It requires synchronization, as multiple threads write to the same
   file.
@@ -178,7 +179,7 @@ We also included comparison of different implementations.
 ### Asynchronous Multithreaded Implementation with Actors
 
 - We introduced `Actors` ([the Actor model](https://en.wikipedia.org/wiki/Actor_model)).
-- This can be a fast solution for this problem, even with one type of actor that performs all three operations
+- This can be a fast solution to this problem, even with one type of actor that performs all three operations
   (fetch, process, write), but it depends on implementation a lot.
 - Having only one Actor doesn't make sense, but we started with one with the intention to improve from there.
 - We initially kept the code asynchronous.
@@ -228,7 +229,7 @@ We also included comparison of different implementations.
         - Using `rayon` is at least equally fast, but probably not faster.
     - This implementation writes to a file, unlike previous implementations, so it is expected that its performance
       is slightly worse because of that.
-    - With async code it was not possible to have the `WriterActor` write out all 505 rows, i.e., performance
+    - With async code it was not possible to have the `WriterActor` write out all ~500 rows, i.e., performance
       indicators for all symbols, in the file, if we only flushed when stopping the actor, i.e., in its `stopped`
       method.
         - Namely, we stop the main loop, which is infinite, by interrupting program by pressing `CTRL+C`, so
@@ -239,7 +240,7 @@ We also included comparison of different implementations.
     - By adding flushing of the buffer to the file in the `WriterActor`'s `handle` method, we are able to solve this
       issue.
         - We do this in case the `WriterActor` also works with *chunks*.
-    - All 505 rows do get printed to `stdout` regardless of the `WriterActor`, as the output to console is handled by
+    - All ~500 rows do get printed to `stdout` regardless of the `WriterActor`, as the output to console is handled by
       the `ProcessorActor`.
 - We experimented with the Publisher/Subscriber model with the `Actix` framework, to get a feel of it.
     - The Publisher/Subscriber model is generally better suited to applications that have a number of different
@@ -248,7 +249,7 @@ We also included comparison of different implementations.
     - Our application is not like that, but we still wanted to try it out and play around with it a little.
         - Namely, we don't want our actors to do the double work, so we have only one instance of each.
         - We could try to implement multiple instances of actors for fun, to see if all of them really get the messages.
-            - For some more fun, we could randomize sending messages to only instance of each type of actor. They
+            - For some more fun, we could randomize sending messages to the only instance of each type of actor. They
               wouldn't be doing double work in that case, which would make the implementation correct.
     - We weren't able to make it work.
         - The issue is that some of our actors are both publishers and subscribers at the same time, and perhaps Actix
@@ -278,7 +279,7 @@ We also included comparison of different implementations.
 
 ### Synchronous Multithreaded Implementation with Actors: TODO
 
-- TODO:
+- Our task is I/O bound, so we could skip this.
 
 ### The Web Service
 
@@ -301,7 +302,7 @@ Most of those were provided by the course author, but were modified where it mad
     - https://github.com/datasets/s-and-p-500-companies/blob/main/data/constituents.csv
     - The lists are not necessarily up-to-date.
 - The alphabetically-sorted list is provided in [sp500_2024_aug.csv](sp500_2024_aug.csv).
-    - There are 505 symbols in it.
+    - There are 505 symbols in it, so ~500.
     - Keep in mind that some symbols come and go to/from the S&P 500 list.
         - In case a symbol is not officially on the list, it will be ignored and consequently
           not shown in the output, be it in `stdout` or in the generated `output.csv`.
@@ -309,6 +310,15 @@ Most of those were provided by the course author, but were modified where it mad
           that contains the list, should be updated accordingly.
             - The file's name intentionally contains the date when it was constructed.
 - The output is not in the same order as input because of concurrent execution of futures.
+
+## Notes on Code
+
+### Async Executors/Runners
+
+- Use `#[tokio::main]` for most of the code variants.
+- Use `#[actix::main]` or `#[actix_rt::main]` if working with the `actix` actor framework.
+- Use `#[xactor::main]` if working with the `xactor` actor framework.
+- Try `#[async_std::main]` in some variants, too.
 
 ## The Most Notable Crates Used
 
@@ -391,7 +401,9 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T1
     - Not all chunk sizes perform the same, so we need to find a sweet spot - an optimal chunk size.
 - It probably helps even more so in a distributed setting (a distributed network of nodes) to send larger messages,
   than smaller ones, in both ways, which means to work with chunks instead of individual symbols.
-- We couldn't measure execution time properly in case of asynchronous code.
+- We couldn't measure execution time properly in case of Actors with asynchronous code.
+    - Perhaps we could send `start` time in a message and ultimately forward it to the Writer Actor which
+      would then calculate and print the execution time after it has written results to the file in each iteration.
 
 TODO:     - This proved to be the fastest solution for this concrete problem.
 

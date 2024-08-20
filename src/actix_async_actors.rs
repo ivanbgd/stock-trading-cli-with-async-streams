@@ -1,3 +1,7 @@
+//! Uses [actix](https://crates.io/crates/actix) as an asynchronous actor framework.
+//!
+//! Requires `#[actix::main]`.
+
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -88,7 +92,10 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
     /// in which case it prints the error message to `stderr`.
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
-    /// we don't break the program but rather continue.
+    /// we don't break the program but rather continue, skipping the symbol.
+    ///
+    /// # Errors
+    /// - [`yahoo::YahooError`](https://docs.rs/yahoo_finance_api/2.2.1/yahoo_finance_api/enum.YahooError.html)
     fn handle(
         &mut self,
         msg: QuoteRequestsMsg,
@@ -124,7 +131,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
 
             // Spawn another Actor and send it the message.
             let proc_address = ProcessorActor.start();
-            let _ = proc_address
+            proc_address
                 .send(symbols_closes_msg)
                 .await
                 .expect("Couldn't send a message to the ProcessorActor.");
@@ -227,7 +234,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
             let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows };
 
             // Send the message to the single writer actor.
-            let _ = writer_address
+            writer_address
                 .send(perf_ind_msg)
                 .await
                 .expect("Couldn't send a message to the WriterActor.");
@@ -270,6 +277,12 @@ struct PerformanceIndicatorsRowsMsg {
 pub struct WriterActor {
     pub file_name: String,
     pub writer: Option<BufWriter<File>>,
+}
+
+impl Default for WriterActor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WriterActor {

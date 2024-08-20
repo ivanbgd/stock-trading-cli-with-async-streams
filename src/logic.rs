@@ -1,19 +1,15 @@
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-// use std::error::Error;
-// use std::sync::OnceLock;
 use anyhow::{Context, Result};
-// use async_std::stream::{self, StreamExt};
 use clap::Parser;
-use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
-// use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::cli::Args;
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
+// use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::types::MsgResponseType;
 
 /// **The main loop**
@@ -30,7 +26,6 @@ use crate::types::MsgResponseType;
 ///
 /// # Errors
 /// - [time::error::Parse](https://docs.rs/time/0.3.36/time/error/enum.Parse.html)
-// pub async fn main_loop() -> Result<MsgResponseType, actix::MailboxError> {
 pub async fn main_loop() -> Result<MsgResponseType> {
     let args = Args::parse();
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
@@ -83,12 +78,14 @@ pub async fn main_loop() -> Result<MsgResponseType> {
 
         let start = Instant::now();
 
+        //
         // NEW: SYNC (BLOCKING) WITHOUT ACTORS, WITH WRITING TO FILE
+        //
 
         // THE FASTEST SOLUTION - 0.7 s with chunk size of 5!
         // This uses async fetching and processing of data.
 
-        // // Tokio: 0.7-0.8 s (new computer); was 0.9 s
+        // // Tokio: 0.7-0.8 s (new computer); was 0.9 s on old computer
         // let mut handles = vec![];
         // for chunk in chunks_of_symbols.clone() {
         //     let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
@@ -98,7 +95,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // let rows = rows.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
         // write_to_csv(&mut writer, rows)?;
 
-        // // rayon: 0.8-0.9 s (new computer); was 1.0 s
+        // // rayon: 0.8-0.9 s (new computer); was 1.0 s on old computer
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| handle_symbol_data(chunk, from, to))
@@ -107,7 +104,9 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // let rows = rows.iter().map(|r| r).collect::<Vec<_>>();
         // write_to_csv(&mut writer, rows)?;
 
+        //
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
+        //
 
         // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
         // This is fast!
@@ -116,7 +115,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // We start multiple instances of `Actor` - one per chunk of symbols,
         // and they will start the next `Actor` in the process - one each.
         // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
-        //
+
         // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
         // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
         // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
@@ -133,11 +132,12 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         }
 
         // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
-        //
+        // // Doesn't work after a breaking change in the yahoo_finance_api (in v2.2.1),
+        // // as the compiler can no longer infer a type.
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| async {
-        //         ActorHandle::new()
+        //         ActorHandle::new() // cannot infer type
         //             .send(ActorMessage::QuoteRequestsMsg {
         //                 symbols: (*chunk).into(),
         //                 from,
@@ -150,9 +150,13 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         //     .collect();
         // let _ = futures::future::join_all(queries).await;
 
-        // NEW WITH ACTORS
+        //
+        // NEW WITH ACTIX ACTORS
+        //
 
-        // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
+        // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s.
+        // Possibly around 1.0 second on new computer and 1.5 s on the old one.
+        // Requires `#[actix::main]`.
 
         // // We start multiple `FetchActor`s - one per chunk of symbols,
         // // and they will start the next Actor in the process - one each.
@@ -172,11 +176,12 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         //         .await?;
         // }
 
-        // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s. Possibly around 1.5 seconds.
-        // // It is not much faster (if at all) than the above solution without rayon.
-        // // Namely, execution time is not measured properly in this case, but it's roughly the same.
-        // // Performance is the same when using regular (core) `chunks()` and `rayon`'s `par_chunks()`.
-        //
+        // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s.
+        // Possibly around 1.0 second on new computer and 1.5 s on the old one.
+        // It is not much faster (if at all) than the above solution without rayon.
+        // Namely, execution time is not measured properly in this case, but it's roughly the same.
+        // Performance is the same when using regular (core) `chunks()` and `rayon`'s `par_chunks()`.
+
         // // We start multiple `FetchActor`s - one per chunk of symbols,
         // // and they will start the next Actor in the process - one each.
         // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
@@ -198,15 +203,19 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         //     .collect();
         // let _ = futures::future::join_all(queries).await;
 
+        //
         // OLD WITH ACTORS
+        //
 
         // // This is not using rayon.
+        // // `actor_address` and `QuoteRequest` are not defined anymore, so this doesn't work.
         // for chunk in chunks_of_symbols.clone() {
         //     let chunk = chunk.to_vec();
         //     let _result = actor_address.send(QuoteRequest { chunk, from, to }).await;
         // }
 
         // // This is using rayon.
+        // // `actor_address` is not defined anymore, so this doesn't work.
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| async {
@@ -221,21 +230,24 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         //     .collect();
         // let _ = futures::future::join_all(queries).await;
 
+        //
         // OLD WITHOUT ACTORS
+        //
 
-        // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
+        // // THE FASTEST SOLUTION - 0.8 s on new computer with chunk size of 5 (1.2 s on old computer)
         // // Explicit concurrency with async/await paradigm:
         // // Run multiple instances of the same Future concurrently.
         // // This is using rayon.
+        // // This is NOT writing to file!
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| handle_symbol_data(chunk, from, to))
         //     .collect();
         // let _ = futures::future::join_all(queries).await; // Vec<()>
 
-        // // THE FASTEST SOLUTION - 1.2 s with chunk size of 5
-        // // The `main()` function requires `#[actix::main]`.
-        // // If we instead put `#[tokio::main]` it throws a panic.
+        // // THE FASTEST SOLUTION - 0.7 s on new computer with chunk size of 5 (1.2 s on old computer)
+        // // The `main()` function works with `#[tokio::main]` (0.7 s) or with `#[actix::main]` (0.8 s).
+        // // It also works with `#[async_std::main]` (0.8 s).
         // // This is using Tokio.
         // let mut handles = vec![];
         // for chunk in chunks_of_symbols.clone() {
