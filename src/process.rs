@@ -110,7 +110,7 @@ pub fn start_writer() -> Result<Option<BufWriter<File>>> {
 ///
 /// We don't have to measure execution time in this function.
 /// We can measure it in the main loop instead.
-/// Still, to be consistent with the asynchronous implementations, we measure it here.
+/// Still, to be consistent with the asynchronous Actor implementations, we measure it here.
 pub fn write_to_csv(
     mut writer: &mut Option<BufWriter<File>>,
     all_rows: Vec<&Result<Vec<String>>>,

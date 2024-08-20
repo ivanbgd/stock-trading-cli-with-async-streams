@@ -7,9 +7,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
 
-use actix::{
-    Actor, ActorContext, Addr, Context, ContextFutureSpawner, Handler, Message, WrapFuture,
-};
+use actix::{Actor, ActorContext, Addr, ContextFutureSpawner, Handler, Message, WrapFuture};
+use anyhow::{Context, Error, Result};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
@@ -32,7 +31,7 @@ use crate::types::MsgResponseType;
 ///
 /// There is no expected response.
 #[derive(Message)]
-#[rtype(result = "Result<MsgResponseType, anyhow::Error>")]
+#[rtype(result = "Result<MsgResponseType, Error>")]
 pub struct QuoteRequestsMsg {
     pub chunk: Vec<String>,
     pub from: OffsetDateTime,
@@ -47,7 +46,7 @@ pub struct QuoteRequestsMsg {
 pub struct FetchActor;
 
 impl Actor for FetchActor {
-    type Context = Context<Self>;
+    type Context = actix::Context<Self>;
 }
 
 impl FetchActor {
@@ -83,7 +82,7 @@ impl FetchActor {
 
 /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
 impl Handler<QuoteRequestsMsg> for FetchActor {
-    type Result = Result<MsgResponseType, anyhow::Error>;
+    type Result = Result<MsgResponseType, Error>;
 
     /// The [`QuoteRequestsMsg`] message handler for the [`FetchActor`] actor
     ///
@@ -102,7 +101,7 @@ impl Handler<QuoteRequestsMsg> for FetchActor {
         &mut self,
         msg: QuoteRequestsMsg,
         ctx: &mut Self::Context,
-    ) -> anyhow::Result<MsgResponseType> {
+    ) -> Result<MsgResponseType> {
         let symbols = msg.chunk;
         let from = msg.from;
         let to = msg.to;
@@ -173,7 +172,7 @@ struct SymbolsClosesMsg {
 struct ProcessorActor;
 
 impl Actor for ProcessorActor {
-    type Context = Context<Self>;
+    type Context = actix::Context<Self>;
 }
 
 /// The [`SymbolsClosesMsg`] message handler for the [`ProcessorActor`] actor
@@ -239,7 +238,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
             let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows, start };
 
             // Send the message to the single writer actor.
-            writer_address
+            let _ = writer_address
                 .send(perf_ind_msg)
                 .await
                 .expect("Couldn't send a message to the WriterActor.");
@@ -272,7 +271,7 @@ struct PerformanceIndicatorsRow {
 ///
 /// There is no expected response.
 #[derive(Message)]
-#[rtype(result = "MsgResponseType")]
+#[rtype(result = "Result<MsgResponseType, Error>")]
 struct PerformanceIndicatorsRowsMsg {
     pub from: String,
     pub rows: Vec<PerformanceIndicatorsRow>,
@@ -301,7 +300,7 @@ impl WriterActor {
 }
 
 impl Actor for WriterActor {
-    type Context = Context<Self>;
+    type Context = actix::Context<Self>;
     // type Context = SyncContext<Self>; todo remove
 
     fn started(&mut self, ctx: &mut Self::Context) {
@@ -328,13 +327,13 @@ impl Actor for WriterActor {
 ///
 /// Writes results to file and measures & prints the iteration's execution time.
 impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
-    type Result = MsgResponseType;
+    type Result = Result<MsgResponseType, Error>;
 
     fn handle(
         &mut self,
         msg: PerformanceIndicatorsRowsMsg,
         _ctx: &mut Self::Context,
-    ) -> Self::Result {
+    ) -> Result<MsgResponseType> {
         let from = msg.from;
         let rows = msg.rows;
         let start = msg.start;
@@ -354,9 +353,12 @@ impl Handler<PerformanceIndicatorsRowsMsg> for WriterActor {
                 );
             }
 
-            file.flush().expect("Failed to flush to file. Data loss :/");
+            file.flush()
+                .context("Failed to flush to file. Data loss :/")?;
         }
 
         println!("Took {:.3?} to complete.\n", start.elapsed());
+
+        Ok(())
     }
 }

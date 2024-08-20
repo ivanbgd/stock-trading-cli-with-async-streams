@@ -66,16 +66,18 @@ trait Actor<R> {
     fn new(receiver: mpsc::Receiver<Self::Msg>) -> Self;
 
     /// Start the [`Actor`]
-    async fn start(&mut self) {}
+    async fn start(&mut self) -> Result<MsgResponseType> {
+        Ok(())
+    }
 
     /// Run the [`Actor`]
-    async fn run(&mut self) -> R;
+    async fn run(&mut self) -> Result<R>;
 
     /// Stop the [`Actor`]
     fn stop(&mut self) {}
 
     /// Handle the message
-    async fn handle(&mut self, msg: Self::Msg) -> R;
+    async fn handle(&mut self, msg: Self::Msg) -> Result<R>;
 }
 
 /// The [`ActorHandle`] controls creation and execution of actors.
@@ -165,14 +167,16 @@ impl Actor<MsgResponseType> for UniversalActor {
     }
 
     /// Run the [`UniversalActor`]
-    async fn run(&mut self) -> MsgResponseType {
+    async fn run(&mut self) -> Result<MsgResponseType> {
         while let Some(msg) = self.receiver.recv().await {
-            self.handle(msg).await;
+            self.handle(msg).await?;
         }
+
+        Ok(())
     }
 
     /// Handle the message
-    async fn handle(&mut self, msg: ActorMessage) -> MsgResponseType {
+    async fn handle(&mut self, msg: ActorMessage) -> Result<MsgResponseType> {
         match msg {
             ActorMessage::QuoteRequestsMsg {
                 symbols,
@@ -194,6 +198,8 @@ impl Actor<MsgResponseType> for UniversalActor {
                 Self::handle_symbols_closes_msg(symbols_closes, from, writer_handle, start).await;
             }
         }
+
+        Ok(())
     }
 }
 
@@ -449,25 +455,29 @@ impl Actor<MsgResponseType> for WriterActor {
     /// Start the [`WriterActor`]
     ///
     /// This function is meant to be used directly in the [`WriterActorHandle`].
-    async fn start(&mut self) {
+    async fn start(&mut self) -> Result<MsgResponseType> {
         let mut file = File::create(&self.file_name)
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
         println!("WriterActor is started.");
 
-        self.run().await
+        self.run().await?;
+
+        Ok(())
     }
 
     /// Run the [`WriterActor`]
     ///
     /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
-    async fn run(&mut self) -> MsgResponseType {
+    async fn run(&mut self) -> Result<MsgResponseType> {
         println!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
-            self.handle(msg).await;
+            self.handle(msg).await?;
         }
+
+        Ok(())
     }
 
     /// Stop the [`WriterActor`]
@@ -486,7 +496,7 @@ impl Actor<MsgResponseType> for WriterActor {
     /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor
     ///
     /// Writes results to file and measures & prints the iteration's execution time.
-    async fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> MsgResponseType {
+    async fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> Result<MsgResponseType> {
         let from = msg.from;
         let rows = msg.rows;
         let start = msg.start;
@@ -506,10 +516,13 @@ impl Actor<MsgResponseType> for WriterActor {
                 );
             }
 
-            file.flush().expect("Failed to flush to file. Data loss :/");
+            file.flush()
+                .context("Failed to flush to file. Data loss :/")?;
         }
 
         println!("Took {:.3?} to complete.\n", start.elapsed());
+
+        Ok(())
     }
 }
 
