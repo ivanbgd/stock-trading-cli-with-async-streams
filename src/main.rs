@@ -28,10 +28,10 @@ async fn main() -> Result<MsgResponseType> {
     // // might support tokio.
     // main_loop().await?;
 
-    // The solution with trackers and cancellation tokens works in the same way as the above simple solution,
-    // but it requires tokio AND tokio_util (with "rt" feature) crates.
-    // So, this support only partially-graceful shutdown, as above.
-    // This does not wait for the task to finish, even though it says it does in its documentation.
+    // This solution waits for tasks to fully finish by sleeping for some time.
+    // This supports a fully-graceful shutdown, meaning, all symbols will be fetched and processed
+    // when the CTRL+C signal arrives.
+    // I consider this kind of hack and not a proper solution, but it works.
     let tracker = TaskTracker::new();
     let token = CancellationToken::new();
 
