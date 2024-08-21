@@ -18,6 +18,9 @@ async fn main() -> Result<MsgResponseType> {
     // // printed and saved to file. This only affects the last iteration of the main loop.
     // // The support still partially exists, as this will write data to stdout and to file for all
     // // symbols (tickers) that were processed before the CTRL+C signal came, so it is partly graceful.
+    // //
+    // // Writing to file is defined and started BEFORE the main loop begins!
+    // //
     // // If we don't care about the last iteration being potentially partial,
     // // this is good enough, it's simple, and it doesn't require tokio or tokio_util crates.
     // // Namely, we are experimenting with other async executors as well, although some of them
@@ -26,6 +29,8 @@ async fn main() -> Result<MsgResponseType> {
 
     // The solution with trackers and cancellation tokens works in the same way as the above simple solution,
     // but it requires tokio AND tokio_util (with "rt" feature) crates.
+    // So, this support only partially-graceful shutdown, as above.
+    // This does not wait for the task to finish, even though it says it does in its documentation.
     let tracker = TaskTracker::new();
     let token = CancellationToken::new();
 

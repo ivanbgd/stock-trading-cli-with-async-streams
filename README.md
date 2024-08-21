@@ -432,8 +432,7 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T1
 - Fully implement graceful stopping and shutdown after receiving the shutdown signal, `CTRL`+`C`.
     - It's only partly implemented.
     - We should broadcast the shutdown signal to all tasks, however they are implemented.
-        - In case of actors, which is considered our main implementation, we should broadcast the signal to all actors,
-          or at least just send the signal to the single instance of the writer actor.
+        - In case of actors, which is considered our main implementation, we should broadcast the signal to all actors.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
 - Rename "output.csv" to "<current_date_and_time_with_tz>.csv".
