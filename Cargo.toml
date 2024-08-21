@@ -19,5 +19,5 @@ futures = { version = "0.3.30" }
 rayon = { version = "1.10.0" }
 time = { version = "0.3.36", features = ["formatting", "parsing"] }
 tokio = { version = "1.39.3", features = ["macros", "rt", "rt-multi-thread"] }
-tokio-util = { version = "0.7.11" }
+tokio-util = { version = "0.7.11", features = ["rt"] }
 yahoo_finance_api = { version = "2.2.1" }

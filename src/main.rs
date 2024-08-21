@@ -1,5 +1,6 @@
 use anyhow::Result;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 use stock::logic::main_loop;
 use stock::types::MsgResponseType;
@@ -23,12 +24,15 @@ async fn main() -> Result<MsgResponseType> {
     // // might support tokio.
     // main_loop().await?;
 
-    // The solution with cancellation tokens works in the same way as the above simple solution,
+    // The solution with trackers and cancellation tokens works in the same way as the above simple solution,
     // but it requires tokio AND tokio_util crates.
+    let tracker = TaskTracker::new();
     let token = CancellationToken::new();
+
+    let cloned_tracker = tracker.clone();
     let cloned_token = token.clone();
 
-    let handle: tokio::task::JoinHandle<Result<MsgResponseType>> = tokio::spawn(async move {
+    tracker.spawn(async move {
         tokio::select! {
             _ = cloned_token.cancelled() => {
                 println!("Shutting down...");
@@ -40,11 +44,13 @@ async fn main() -> Result<MsgResponseType> {
         }
     });
 
+    // Spawn a background task that will send the shutdown signal.
     tokio::spawn(async move {
         match tokio::signal::ctrl_c().await {
             Ok(()) => {
                 println!("\nCTRL+C received.");
 
+                cloned_tracker.close();
                 token.cancel();
             }
             Err(err) => {
@@ -54,7 +60,8 @@ async fn main() -> Result<MsgResponseType> {
         }
     });
 
-    let _ = handle.await?;
+    // Wait for all tasks to exit.
+    tracker.wait().await;
 
     // tokio::select! {
     //     _ = tokio::signal::ctrl_c() => {
