@@ -13,6 +13,8 @@ async fn main() -> Result<MsgResponseType> {
 
     // // This doesn't fully support a graceful shutdown.
     // // It will not run an iteration of the main loop to completion upon receiving the CTRL+C signal.
+    // // If the signal comes in the middle of data fetching and processing, only fetched symbols will be
+    // // printed and saved to file. This only affects the last iteration of the main loop.
     // // The support still partially exists, as this will write data to stdout and to file for all
     // // symbols (tickers) that were processed before the CTRL+C signal came, so it is partly graceful.
     // // If we don't care about the last iteration being potentially partial,
@@ -39,10 +41,17 @@ async fn main() -> Result<MsgResponseType> {
     });
 
     tokio::spawn(async move {
-        let res = tokio::signal::ctrl_c().await;
-        println!("\nCTRL+C received.");
-        token.cancel();
-        res
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {
+                println!("\nCTRL+C received.");
+
+                token.cancel();
+            }
+            Err(err) => {
+                // We also shut down in case of an error.
+                panic!("Unable to listen for the shutdown signal: {}", err);
+            }
+        }
     });
 
     let _ = handle.await?;
@@ -70,7 +79,7 @@ async fn main() -> Result<MsgResponseType> {
     //         println!("\nCTRL+C received. Shutting down...");
     //     }
     //     Err(err) => {
-    //         // We also shut down in case of error.
+    //         // We also shut down in case of an error.
     //         eprintln!("Unable to listen for the shutdown signal: {}", err);
     //     }
     // }
