@@ -1,11 +1,9 @@
 use anyhow::Result;
-use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
 
+use stock::constants::SHUTDOWN_INTERVAL_SECS;
 use stock::logic::main_loop;
 use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
-use stock_trading_cli_with_async_streams::constants::SHUTDOWN_INTERVAL_SECS;
 
 // #[async_std::main]
 // #[actix::main]
@@ -32,77 +30,29 @@ async fn main() -> Result<MsgResponseType> {
     // This supports a fully-graceful shutdown, meaning, all symbols will be fetched and processed
     // when the CTRL+C signal arrives.
     // I consider this kind of hack and not a proper solution, but it works.
-    let tracker = TaskTracker::new();
-    let token = CancellationToken::new();
 
-    let cloned_tracker = tracker.clone();
-    let cloned_token = token.clone();
+    // Spawn application as a separate task
+    tokio::spawn(async move { main_loop().await });
 
-    tracker.spawn(async move {
-        tokio::select! {
-            _ = cloned_token.cancelled() => {
-                println!("Shutting down now.");
-                Ok(())
-            }
-            loop_result = main_loop() => {
-                loop_result
-            }
+    // Await the shutdown signal
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => {
+            println!(
+                "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+                SHUTDOWN_INTERVAL_SECS
+            );
+            tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
         }
-    });
-
-    // Spawn a background task that will send the shutdown signal.
-    tokio::spawn(async move {
-        match tokio::signal::ctrl_c().await {
-            Ok(()) => {
-                println!(
-                    "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
-                    SHUTDOWN_INTERVAL_SECS
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
-
-                cloned_tracker.close();
-                token.cancel();
-            }
-            Err(err) => {
-                // We also shut down in case of an error.
-                panic!("Unable to listen for the shutdown signal: {}", err);
-            }
+        Err(err) => {
+            // We also shut down in case of an error.
+            eprintln!("Unable to listen for the shutdown signal: {}", err);
         }
-    });
-
-    // Wait for all tasks to exit.
-    tracker.wait().await;
-
-    // tokio::select! {
-    //     _ = tokio::signal::ctrl_c() => {
-    //         println!("\nCTRL+C received. Shutting down...");
-    //         return Ok(());
-    //     },
-    //     _ = main_loop() => {},
-    // }
-
-    // // Spawn application as a separate task
-    // tokio::spawn(async move {
-    //     let _ = main_loop().await;
-    //     // main_loop().await?;
-    // });
-
-    // tokio::signal::ctrl_c().await?;
-    // println!("\nCTRL+C received. Shutting down...");
-
-    // // Await the shutdown signal
-    // match tokio::signal::ctrl_c().await {
-    //     Ok(()) => {
-    //         println!("\nCTRL+C received. Shutting down...");
-    //     }
-    //     Err(err) => {
-    //         // We also shut down in case of an error.
-    //         eprintln!("Unable to listen for the shutdown signal: {}", err);
-    //     }
-    // }
+    }
 
     // Send the shutdown signal to application and wait for it to shut down
     // Implement broadcasting or sending the shutdown signal...
+
+    println!("Exiting now.");
 
     Ok(())
 }
