@@ -25,7 +25,7 @@ async fn main() -> Result<MsgResponseType> {
     // main_loop().await?;
 
     // The solution with trackers and cancellation tokens works in the same way as the above simple solution,
-    // but it requires tokio AND tokio_util crates.
+    // but it requires tokio AND tokio_util (with "rt" feature) crates.
     let tracker = TaskTracker::new();
     let token = CancellationToken::new();
 
