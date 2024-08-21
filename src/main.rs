@@ -5,6 +5,7 @@ use tokio_util::task::TaskTracker;
 use stock::logic::main_loop;
 use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
+use stock_trading_cli_with_async_streams::constants::SHUTDOWN_INTERVAL_SECS;
 
 // #[async_std::main]
 // #[actix::main]
@@ -40,7 +41,7 @@ async fn main() -> Result<MsgResponseType> {
     tracker.spawn(async move {
         tokio::select! {
             _ = cloned_token.cancelled() => {
-                println!("Shutting down...");
+                println!("Shutting down now.");
                 Ok(())
             }
             loop_result = main_loop() => {
@@ -53,7 +54,11 @@ async fn main() -> Result<MsgResponseType> {
     tokio::spawn(async move {
         match tokio::signal::ctrl_c().await {
             Ok(()) => {
-                println!("\nCTRL+C received.");
+                println!(
+                    "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+                    SHUTDOWN_INTERVAL_SECS
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
 
                 cloned_tracker.close();
                 token.cancel();

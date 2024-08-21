@@ -1,4 +1,5 @@
 pub const TICK_INTERVAL_SECS: u64 = 5;
+pub const SHUTDOWN_INTERVAL_SECS: u64 = 2;
 
 pub const CHUNK_SIZE: usize = 5;
 
