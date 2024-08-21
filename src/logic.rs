@@ -24,6 +24,7 @@ use actix::Actor;
 use anyhow::{Context, Result};
 use clap::Parser;
 // use rayon::prelude::*;
+use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
@@ -63,8 +64,8 @@ pub async fn main_loop() -> Result<MsgResponseType> {
     static SYMBOLS: OnceLock<Vec<String>> = OnceLock::new();
     // // let symbols = SYMBOLS.get_or_init(|| args.symbols.split(",").map(|s| s.to_string()).collect());
     let symbols = SYMBOLS.get_or_init(|| symbols);
-    // let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
-    let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
+    // let chunks_of_symbols: Vec<&[String]> = symbols.chunks(CHUNK_SIZE).collect(); // stdlib chunks
+    let chunks_of_symbols: Vec<&[String]> = symbols.par_chunks(CHUNK_SIZE).collect(); // rayon parallel chunks
 
     // Use with async without Actors
     // let mut writer = start_writer()?;
@@ -135,56 +136,57 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
         //
 
-        // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
-        // This is fast!
-        //
-        // This is considered the main implementation of the application.
-        //
-        // We start multiple instances of `Actor` - one per chunk of symbols,
-        // and they will start the next `Actor` in the process - one each.
-        // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
-        //
-        // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
-        //
-        // It's around 0.8 s on new computer with chunk size = 5; it wasn't measured on the old one.
-        // It's less than 0.6 s on new computer with chunk size = 1!
-        // It's around 1.4 s with CS = 10, and over 5 s with CS = 50.
-        // Prints execution time after each chunk, which doesn't look super-nice, and that also
-        // slows down execution a little, but at least we can measure the execution time,
-        // which is important to us.
-        for chunk in chunks_of_symbols.clone() {
-            let actor_handle = UniversalActorHandle::new();
-            let _ = actor_handle
-                .send(ActorMessage::QuoteRequestsMsg {
-                    symbols: chunk.into(),
-                    from,
-                    to,
-                    writer_handle: writer_handle.clone(),
-                    start,
-                })
-                .await;
-        }
+        // // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
+        // // This is fast!
+        // //
+        // // This is considered the main implementation of the application.
+        // //
+        // // We start multiple instances of `Actor` - one per chunk of symbols,
+        // // and they will start the next `Actor` in the process - one each.
+        // // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
+        // //
+        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+        // // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
+        // //
+        // // It's around 0.8 s on new computer with chunk size = 5; it wasn't measured on the old one.
+        // // It's less than 0.6 s on new computer with chunk size = 1!
+        // // It's around 1.4 s with CS = 10, and over 5 s with CS = 50.
+        // // Prints execution time after each chunk, which doesn't look super-nice, and that also
+        // // slows down execution a little, but at least we can measure the execution time,
+        // // which is important to us.
+        // for chunk in chunks_of_symbols.clone() {
+        //     let actor_handle = UniversalActorHandle::new();
+        //     let _ = actor_handle
+        //         .send(ActorMessage::QuoteRequestsMsg {
+        //             symbols: chunk.into(),
+        //             from,
+        //             to,
+        //             writer_handle: writer_handle.clone(),
+        //             start,
+        //         })
+        //         .await;
+        // }
 
-        // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
-        // // Doesn't work after a breaking change in the yahoo_finance_api (in v2.2.1),
-        // // as the compiler can no longer infer a type.
-        // TODO: Fix!
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| async {
-        //         ActorHandle::new() // cannot infer type
-        //             .send(ActorMessage::QuoteRequestsMsg {
-        //                 symbols: (*chunk).into(),
-        //                 from,
-        //                 to,
-        //                 writer_handle: writer_handle.clone(),
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
+        // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
+        // It's around 0.7 s on new computer with chunk size = 5; it wasn't measured on the old one.
+        // It's around 1.3 s with CS = 1, and around 1.3 s with CS = 10.
+        let queries: Vec<_> = chunks_of_symbols
+            .par_iter()
+            .map(|chunk| async {
+                let actor_handle: UniversalActorHandle = ActorHandle::new();
+                actor_handle
+                    .send(ActorMessage::QuoteRequestsMsg {
+                        symbols: (*chunk).into(),
+                        from,
+                        to,
+                        writer_handle: writer_handle.clone(),
+                        start,
+                    })
+                    .await
+            })
+            .collect();
+        let _ = futures::future::join_all(queries).await;
 
         //
         // NEW WITH ACTIX ACTORS
