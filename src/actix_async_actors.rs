@@ -301,7 +301,6 @@ impl WriterActor {
 
 impl Actor for WriterActor {
     type Context = actix::Context<Self>;
-    // type Context = SyncContext<Self>; todo remove
 
     fn started(&mut self, ctx: &mut Self::Context) {
         ctx.set_mailbox_capacity(16); // Default capacity is 16 messages.
@@ -309,6 +308,7 @@ impl Actor for WriterActor {
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
+        #[cfg(debug_assertions)]
         println!("WriterActor is started.");
     }
 
@@ -319,6 +319,7 @@ impl Actor for WriterActor {
                 .expect("Failed to flush writer. Data loss :(")
         };
         ctx.stop();
+        #[cfg(debug_assertions)]
         println!("WriterActor is flushed and properly stopped.");
     }
 }

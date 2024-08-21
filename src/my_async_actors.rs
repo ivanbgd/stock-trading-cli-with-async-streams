@@ -460,6 +460,7 @@ impl Actor<MsgResponseType> for WriterActor {
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
+        #[cfg(debug_assertions)]
         println!("WriterActor is started.");
 
         self.run().await?;
@@ -471,6 +472,7 @@ impl Actor<MsgResponseType> for WriterActor {
     ///
     /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
     async fn run(&mut self) -> Result<MsgResponseType> {
+        #[cfg(debug_assertions)]
         println!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
@@ -490,6 +492,7 @@ impl Actor<MsgResponseType> for WriterActor {
                 .expect("Failed to flush writer. Data loss :(")
         };
 
+        #[cfg(debug_assertions)]
         println!("WriterActor is flushed and properly stopped.");
     }
 

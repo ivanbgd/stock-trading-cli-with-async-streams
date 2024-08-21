@@ -101,6 +101,7 @@ pub fn start_writer() -> Result<Option<BufWriter<File>>> {
         .context(format!("Could not open target file \"{}\".", file_name))?;
     let _ = writeln!(&mut file, "{}", CSV_HEADER);
     let writer = Some(BufWriter::new(file));
+    #[cfg(debug_assertions)]
     println!("Writer is started.");
 
     Ok(writer)
@@ -139,6 +140,8 @@ pub fn stop_writer(mut writer: Option<BufWriter<File>>) -> Result<()> {
             .flush()
             .context("Failed to flush writer. Data loss :(")?;
     };
+    #[cfg(debug_assertions)]
     println!("Writer is flushed and properly stopped.");
+
     Ok(())
 }

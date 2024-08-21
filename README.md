@@ -58,6 +58,9 @@ pricing data and calculate key financial metrics in real time.
 - We measured execution time for various implementations.
     - Some of those results are mentioned in this document, and some are present in code,
       in [logic.rs](./src/logic.rs) - it contains newer information.
+    - All time measurements were performed in the *DEBUG* build profile.
+    - The *RELEASE* build profile was also tried out, but it didn't yield much performance improvement
+      over the *DEBUG* profile, if any at all.
 
 ## Implementation Notes and Conclusions
 
