@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{CSV_FILE_NAME, CSV_HEADER, MPSC_CHANNEL_CAPACITY, WINDOW_SIZE};
+use crate::constants::{ACTOR_CHANNEL_CAPACITY, CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
 use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 
 // ============================================================================
@@ -385,7 +385,7 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
     ///
     /// Panics if it can't run the actor.
     fn new() -> Self {
-        let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
+        let (sender, receiver) = mpsc::channel(ACTOR_CHANNEL_CAPACITY);
         let mut actor = UniversalActor::new(receiver);
         tokio::spawn(async move { actor.run().await });
 
@@ -567,7 +567,7 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
     ///
     /// Panics if it can't run the actor.
     fn new() -> Self {
-        let (sender, receiver) = mpsc::channel(MPSC_CHANNEL_CAPACITY);
+        let (sender, receiver) = mpsc::channel(ACTOR_CHANNEL_CAPACITY);
         let mut actor = WriterActor::new(receiver);
         tokio::spawn(async move { actor.start().await });
 

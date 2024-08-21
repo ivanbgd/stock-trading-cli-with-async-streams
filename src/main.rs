@@ -12,6 +12,7 @@ async fn main() -> Result<MsgResponseType> {
     println!();
 
     // // This doesn't fully support a graceful shutdown.
+    // // This works with any async executor.
     // // It will not run an iteration of the main loop to completion upon receiving the CTRL+C signal.
     // // If the signal comes in the middle of data fetching and processing, only fetched symbols will be
     // // printed and saved to file. This only affects the last iteration of the main loop.
@@ -27,9 +28,12 @@ async fn main() -> Result<MsgResponseType> {
     // main_loop().await?;
 
     // This solution waits for tasks to fully finish by sleeping for some time.
-    // This supports a fully-graceful shutdown, meaning, all symbols will be fetched and processed
+    // It uses tokio.
+    // This supports a fully-graceful shutdown, meaning all symbols will be fetched and processed
     // when the CTRL+C signal arrives.
+    //
     // I consider this kind of hack and not a proper solution, but it works.
+    // A proper solution would probably use a channel to send the shutdown signal.
 
     // Spawn application as a separate task
     tokio::spawn(async move { main_loop().await });
@@ -49,7 +53,7 @@ async fn main() -> Result<MsgResponseType> {
         }
     }
 
-    // Send the shutdown signal to application and wait for it to shut down
+    // Send the shutdown signal to task and wait for it to shut down
     // Implement broadcasting or sending the shutdown signal...
 
     println!("Exiting now.");
