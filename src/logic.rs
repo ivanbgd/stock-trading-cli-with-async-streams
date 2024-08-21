@@ -138,6 +138,8 @@ pub async fn main_loop() -> Result<MsgResponseType> {
         // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
         // This is fast!
         //
+        // This is considered the main implementation of the application.
+        //
         // We start multiple instances of `Actor` - one per chunk of symbols,
         // and they will start the next `Actor` in the process - one each.
         // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.

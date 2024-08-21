@@ -1659,6 +1659,7 @@ dependencies = [
  "rayon",
  "time",
  "tokio",
+ "tokio-util",
  "yahoo_finance_api",
 ]
 
