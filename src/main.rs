@@ -19,6 +19,7 @@ async fn main() -> Result<MsgResponseType> {
     // // symbols (tickers) that were processed before the CTRL+C signal came, so it is partly graceful.
     // //
     // // Writing to file is defined and started BEFORE the main loop begins!
+    // // This is a difference between it and fetching and processing of data.
     // //
     // // If we don't care about the last iteration being potentially partial,
     // // this is good enough, it's simple, and it doesn't require tokio or tokio_util crates.

@@ -29,7 +29,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
-use crate::constants::{CHUNK_SIZE, CSV_HEADER, SHUTDOWN_INTERVAL_SECS, TICK_INTERVAL_SECS};
+use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
 use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 // use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::types::MsgResponseType;
@@ -166,38 +166,38 @@ pub async fn main_loop() -> Result<MsgResponseType> {
                 // Prints execution time after each chunk, which doesn't look super-nice, and that also
                 // slows down execution a little, but at least we can measure the execution time,
                 // which is important to us.
-                for chunk in chunks_of_symbols.clone() {
-                    let actor_handle = UniversalActorHandle::new();
-                    let _ = actor_handle
-                        .send(ActorMessage::QuoteRequestsMsg {
-                            symbols: chunk.into(),
-                            from,
-                            to,
-                            writer_handle: writer_handle.clone(),
-                            start,
-                        })
-                        .await;
-                }
+                // for chunk in chunks_of_symbols.clone() {
+                //     let actor_handle = UniversalActorHandle::new();
+                //     let _ = actor_handle
+                //         .send(ActorMessage::QuoteRequestsMsg {
+                //             symbols: chunk.into(),
+                //             from,
+                //             to,
+                //             writer_handle: writer_handle.clone(),
+                //             start,
+                //         })
+                //         .await;
+                // }
 
-                // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
-                // // It's around 0.7 s on new computer with chunk size = 5; it wasn't measured on the old one.
-                // // It's around 1.3 s with CS = 1, and around 1.3 s with CS = 10.
-                // let queries: Vec<_> = chunks_of_symbols
-                //     .par_iter()
-                //     .map(|chunk| async {
-                //         let actor_handle: UniversalActorHandle = ActorHandle::new();
-                //         actor_handle
-                //             .send(ActorMessage::QuoteRequestsMsg {
-                //                 symbols: (*chunk).into(),
-                //                 from,
-                //                 to,
-                //                 writer_handle: writer_handle.clone(),
-                //                 start,
-                //             })
-                //             .await
-                //     })
-                //     .collect();
-                // let _ = futures::future::join_all(queries).await;
+                // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
+                // It's around 0.7 s on new computer with chunk size = 5; it wasn't measured on the old one.
+                // It's around 1.3 s with CS = 1, and around 1.3 s with CS = 10.
+                let queries: Vec<_> = chunks_of_symbols
+                    .par_iter()
+                    .map(|chunk| async {
+                        let actor_handle: UniversalActorHandle = ActorHandle::new();
+                        actor_handle
+                            .send(ActorMessage::QuoteRequestsMsg {
+                                symbols: (*chunk).into(),
+                                from,
+                                to,
+                                writer_handle: writer_handle.clone(),
+                                start,
+                            })
+                            .await
+                    })
+                    .collect();
+                let _ = futures::future::join_all(queries).await;
 
                 //
                 // NEW WITH ACTIX ACTORS
@@ -257,12 +257,21 @@ pub async fn main_loop() -> Result<MsgResponseType> {
 
                 println!();
             },
+            // The break executes immediately if we don't sleep, and we consequently don't
+            // process all symbols, even if a barrier (join) is used like we do here with the
+            // rayon variant. So, this is not a fully-graceful shutdown.
+            // Namely, we only join the first layer of Actors, which are fetching data,
+            // but we are not joining the second layer of Actors, which process the data.
+            // By the way, writing to file works because it's started before the loop.
+            // So, this solution is partly-graceful.
             _ = tokio::signal::ctrl_c() => {
-                println!(
-                    "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
-                    SHUTDOWN_INTERVAL_SECS
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
+                println!("\nCTRL+C received.");
+
+                // println!(
+                //     "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+                //     SHUTDOWN_INTERVAL_SECS
+                // );
+                // tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
 
                 break Ok(());
             },
