@@ -29,7 +29,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 use crate::cli::Args;
-use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
+use crate::constants::{CHUNK_SIZE, CSV_HEADER, SHUTDOWN_INTERVAL_SECS, TICK_INTERVAL_SECS};
 use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 // use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::types::MsgResponseType;
@@ -89,162 +89,184 @@ pub async fn main_loop() -> Result<MsgResponseType> {
 
     // while let Some(_) = interval.next().await {
     loop {
-        interval.tick().await;
+        // This doesn't exhibit the exact same behavior as when we handle `CTRL+C` in the function `main()`.
+        // It is very similar, though, and can be considered the same.
+        // Namely, if we handle CTRL+C in main() and a user sends the signal just before an iteration of this loop
+        // begins, the iteration will be run.
+        // If we instead handle CTRL+C here, in this loop, then if a user sends the signal when an iteration begins,
+        // it will be run to completion, but it won't be run if the signal is sent just before an iteration begins.
+        // All in all, in neither case will an iteration run only partly if it has already begun.
+        // So, all iterations will run to completion if they start running.
+        // Whether the last iteration will run at all depends on the exact moment when a user presses CTRL+C,
+        // i.e., how long before a new iteration begins - whether it falls in the [`SHUTDOWN_INTERVAL_SECS`]
+        // window.
+        tokio::select! {
+            _ = interval.tick() => {
+                // We always want a fresh period end time, which is "now" in the UTC time zone.
+                let to = OffsetDateTime::now_utc();
 
-        // We always want a fresh period end time, which is "now" in the UTC time zone.
-        let to = OffsetDateTime::now_utc();
+                // For standard output only, i.e., not for CSV
+                println!("\n\n*** {} ***\n", to);
 
-        // For standard output only, i.e., not for CSV
-        println!("\n\n*** {} ***\n", to);
+                // A simple way to output a CSV header
+                println!("{}", CSV_HEADER);
 
-        // A simple way to output a CSV header
-        println!("{}", CSV_HEADER);
+                let start = Instant::now();
 
-        let start = Instant::now();
+                //
+                // NEW: ASYNC WITHOUT ACTORS, WITH WRITING TO FILE
+                //
 
-        //
-        // NEW: ASYNC WITHOUT ACTORS, WITH WRITING TO FILE
-        //
+                // // THE FASTEST SOLUTION - 0.7 s with chunk size of 5!
+                // // This uses async fetching and processing of data.
+                // //
+                // // Tokio: 0.7-0.8 s (new computer); was 0.9 s on old computer - with chunk size = 5
+                // // With CS = 1 it's ~1.3 s, and with CS = 10 it's ~1.3 s.
+                // // Explicit concurrency with async/await paradigm:
+                // // Run multiple instances of the same Future concurrently.
+                // let mut handles = vec![];
+                // for chunk in chunks_of_symbols.clone() {
+                //     let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
+                //     handles.push(handle);
+                // }
+                // let rows = futures::future::join_all(handles).await;
+                // let rows = rows.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
+                // write_to_csv(&mut writer, rows, start)?;
 
-        // // THE FASTEST SOLUTION - 0.7 s with chunk size of 5!
-        // // This uses async fetching and processing of data.
-        // //
-        // // Tokio: 0.7-0.8 s (new computer); was 0.9 s on old computer - with chunk size = 5
-        // // With CS = 1 it's ~1.3 s, and with CS = 10 it's ~1.3 s.
-        // // Explicit concurrency with async/await paradigm:
-        // // Run multiple instances of the same Future concurrently.
-        // let mut handles = vec![];
-        // for chunk in chunks_of_symbols.clone() {
-        //     let handle = tokio::spawn(handle_symbol_data(chunk, from, to));
-        //     handles.push(handle);
-        // }
-        // let rows = futures::future::join_all(handles).await;
-        // let rows = rows.iter().map(|r| r.as_ref().unwrap()).collect::<Vec<_>>();
-        // write_to_csv(&mut writer, rows, start)?;
+                // // rayon: 0.8-0.9 s (new computer); was 1.0 s on old computer - with chunk size = 5
+                // // With CS = 1 it's ~0.9 s, and with CS = 10 it's ~1.3 s.
+                // let queries: Vec<_> = chunks_of_symbols
+                //     .par_iter()
+                //     .map(|chunk| handle_symbol_data(chunk, from, to))
+                //     .collect();
+                // let rows = futures::future::join_all(queries).await;
+                // let rows = rows.iter().map(|r| r).collect::<Vec<_>>();
+                // write_to_csv(&mut writer, rows, start)?;
 
-        // // rayon: 0.8-0.9 s (new computer); was 1.0 s on old computer - with chunk size = 5
-        // // With CS = 1 it's ~0.9 s, and with CS = 10 it's ~1.3 s.
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| handle_symbol_data(chunk, from, to))
-        //     .collect();
-        // let rows = futures::future::join_all(queries).await;
-        // let rows = rows.iter().map(|r| r).collect::<Vec<_>>();
-        // write_to_csv(&mut writer, rows, start)?;
+                //
+                // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
+                //
 
-        //
-        // NEW WITH MY OWN IMPLEMENTATION OF ACTORS
-        //
+                // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
+                // This is fast!
+                //
+                // This is considered the main implementation of the application.
+                //
+                // We start multiple instances of `Actor` - one per chunk of symbols,
+                // and they will start the next `Actor` in the process - one each.
+                // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
+                //
+                // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+                // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+                // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
+                //
+                // It's around 0.8 s on new computer with chunk size = 5; it wasn't measured on the old one.
+                // It's less than 0.6 s on new computer with chunk size = 1!
+                // It's around 1.4 s with CS = 10, and over 5 s with CS = 50.
+                // Prints execution time after each chunk, which doesn't look super-nice, and that also
+                // slows down execution a little, but at least we can measure the execution time,
+                // which is important to us.
+                for chunk in chunks_of_symbols.clone() {
+                    let actor_handle = UniversalActorHandle::new();
+                    let _ = actor_handle
+                        .send(ActorMessage::QuoteRequestsMsg {
+                            symbols: chunk.into(),
+                            from,
+                            to,
+                            writer_handle: writer_handle.clone(),
+                            start,
+                        })
+                        .await;
+                }
 
-        // Without rayon. Not sequential. Multiple "`FetchActor`s" and "`ProcessorActor`s".
-        // This is fast!
-        //
-        // This is considered the main implementation of the application.
-        //
-        // We start multiple instances of `Actor` - one per chunk of symbols,
-        // and they will start the next `Actor` in the process - one each.
-        // A single `ActorHandle` creates a single `Actor` instance and runs it on a new Tokio (asynchronous) task.
-        //
-        // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // They'll also spawn multiple "`ProcessorActor`s" concurrently (at the same time).
-        //
-        // It's around 0.8 s on new computer with chunk size = 5; it wasn't measured on the old one.
-        // It's less than 0.6 s on new computer with chunk size = 1!
-        // It's around 1.4 s with CS = 10, and over 5 s with CS = 50.
-        // Prints execution time after each chunk, which doesn't look super-nice, and that also
-        // slows down execution a little, but at least we can measure the execution time,
-        // which is important to us.
-        for chunk in chunks_of_symbols.clone() {
-            let actor_handle = UniversalActorHandle::new();
-            let _ = actor_handle
-                .send(ActorMessage::QuoteRequestsMsg {
-                    symbols: chunk.into(),
-                    from,
-                    to,
-                    writer_handle: writer_handle.clone(),
-                    start,
-                })
-                .await;
+                // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
+                // // It's around 0.7 s on new computer with chunk size = 5; it wasn't measured on the old one.
+                // // It's around 1.3 s with CS = 1, and around 1.3 s with CS = 10.
+                // let queries: Vec<_> = chunks_of_symbols
+                //     .par_iter()
+                //     .map(|chunk| async {
+                //         let actor_handle: UniversalActorHandle = ActorHandle::new();
+                //         actor_handle
+                //             .send(ActorMessage::QuoteRequestsMsg {
+                //                 symbols: (*chunk).into(),
+                //                 from,
+                //                 to,
+                //                 writer_handle: writer_handle.clone(),
+                //                 start,
+                //             })
+                //             .await
+                //     })
+                //     .collect();
+                // let _ = futures::future::join_all(queries).await;
+
+                //
+                // NEW WITH ACTIX ACTORS
+                //
+
+                // // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s.
+                // // Requires `#[actix::main]`.
+                // // Around 0.8 seconds on new computer and 1.5 s on the old one, with chunk size = 5.
+                // // Still around 0.8 s with CS = 1, and around 1.3-1.4 s with CS = 10.
+                // // We start multiple `FetchActor`s - one per chunk of symbols,
+                // // and they will start the next Actor in the process - one each.
+                // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+                // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+                // // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
+                // for chunk in chunks_of_symbols.clone() {
+                //     let fetch_address = FetchActor.start();
+                //
+                //     let _ = fetch_address
+                //         .send(QuoteRequestsMsg {
+                //             chunk: chunk.into(),
+                //             from,
+                //             to,
+                //             writer_address: writer_address.clone(),
+                //             start,
+                //         })
+                //         .await?;
+                // }
+
+                // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s.
+                // // Requires `#[actix::main]`.
+                // // Around 0.8 seconds on new computer and 1.5 s on the old one, with chunk size = 5.
+                // // Around 0.9 s with CS = 1, and around 1.4 s with CS = 10.
+                // // It is not much faster (if at all) than the above solution without rayon.
+                // // Namely, execution time is not measured properly in this case, but it's roughly the same.
+                // // Performance is the same when using regular (core) `chunks()` and `rayon`'s `par_chunks()`.
+                // // We start multiple `FetchActor`s - one per chunk of symbols,
+                // // and they will start the next Actor in the process - one each.
+                // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
+                // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
+                // // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
+                // let queries: Vec<_> = chunks_of_symbols
+                //     .par_iter()
+                //     .map(|chunk| async {
+                //         FetchActor
+                //             .start()
+                //             .send(QuoteRequestsMsg {
+                //                 chunk: (*chunk).into(),
+                //                 from,
+                //                 to,
+                //                 writer_address: writer_address.clone(),
+                //                 start,
+                //             })
+                //             .await
+                //     })
+                //     .collect();
+                // let _ = futures::future::join_all(queries).await;
+
+                println!();
+            },
+            _ = tokio::signal::ctrl_c() => {
+                println!(
+                    "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+                    SHUTDOWN_INTERVAL_SECS
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
+
+                break Ok(());
+            },
         }
-
-        // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
-        // // It's around 0.7 s on new computer with chunk size = 5; it wasn't measured on the old one.
-        // // It's around 1.3 s with CS = 1, and around 1.3 s with CS = 10.
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| async {
-        //         let actor_handle: UniversalActorHandle = ActorHandle::new();
-        //         actor_handle
-        //             .send(ActorMessage::QuoteRequestsMsg {
-        //                 symbols: (*chunk).into(),
-        //                 from,
-        //                 to,
-        //                 writer_handle: writer_handle.clone(),
-        //                 start,
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
-
-        //
-        // NEW WITH ACTIX ACTORS
-        //
-
-        // // Without rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s.
-        // // Requires `#[actix::main]`.
-        // // Around 0.8 seconds on new computer and 1.5 s on the old one, with chunk size = 5.
-        // // Still around 0.8 s with CS = 1, and around 1.3-1.4 s with CS = 10.
-        // // We start multiple `FetchActor`s - one per chunk of symbols,
-        // // and they will start the next Actor in the process - one each.
-        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
-        // for chunk in chunks_of_symbols.clone() {
-        //     let fetch_address = FetchActor.start();
-        //
-        //     let _ = fetch_address
-        //         .send(QuoteRequestsMsg {
-        //             chunk: chunk.into(),
-        //             from,
-        //             to,
-        //             writer_address: writer_address.clone(),
-        //             start,
-        //         })
-        //         .await?;
-        // }
-
-        // // With rayon. Not sequential. Multiple `FetchActor`s and `ProcessorActor`s.
-        // // Requires `#[actix::main]`.
-        // // Around 0.8 seconds on new computer and 1.5 s on the old one, with chunk size = 5.
-        // // Around 0.9 s with CS = 1, and around 1.4 s with CS = 10.
-        // // It is not much faster (if at all) than the above solution without rayon.
-        // // Namely, execution time is not measured properly in this case, but it's roughly the same.
-        // // Performance is the same when using regular (core) `chunks()` and `rayon`'s `par_chunks()`.
-        // // We start multiple `FetchActor`s - one per chunk of symbols,
-        // // and they will start the next Actor in the process - one each.
-        // // Explicit concurrency with async/await paradigm: Run multiple instances of the same Future concurrently.
-        // // That's why it's fast - we spawn multiple tasks, i.e., multiple actors, concurrently, at the same time.
-        // // They'll also spawn multiple `ProcessorActor`s concurrently (at the same time).
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| async {
-        //         FetchActor
-        //             .start()
-        //             .send(QuoteRequestsMsg {
-        //                 chunk: (*chunk).into(),
-        //                 from,
-        //                 to,
-        //                 writer_address: writer_address.clone(),
-        //                 start,
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
-
-        println!();
     }
 
     // println!("OUT!!!");

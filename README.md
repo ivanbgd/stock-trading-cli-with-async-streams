@@ -355,6 +355,10 @@ The `git` commit history contains descriptive comments.
 - The examples below demonstrate how to run the app.
 - The output date and time are also in the `RFC3339` format.
 - The program runs in a loop with a specified interval (in [src/constants.rs](src/constants.rs)).
+- `cargo` also catches the `CTRL+C` signal, which interferes with this application's catching of the signal,
+  and this can be problematic only on Windows, as discussed
+  [here](https://www.reddit.com/r/rust/comments/6lsead/problems_with_ctrlc_handling_under_rust_in_windows/).
+  The solution is to run the binary directly and not through `cargo`.
 
 ### Example 1: Provide Some Symbols On the Command Line
 

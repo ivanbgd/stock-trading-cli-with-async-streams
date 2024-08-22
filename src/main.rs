@@ -1,6 +1,5 @@
 use anyhow::Result;
 
-use stock::constants::SHUTDOWN_INTERVAL_SECS;
 use stock::logic::main_loop;
 use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
@@ -25,7 +24,7 @@ async fn main() -> Result<MsgResponseType> {
     // // this is good enough, it's simple, and it doesn't require tokio or tokio_util crates.
     // // Namely, we are experimenting with other async executors as well, although some of them
     // // might support tokio.
-    // main_loop().await?;
+    main_loop().await?;
 
     // This solution waits for tasks to fully finish by sleeping for some time.
     // It uses tokio.
@@ -34,24 +33,25 @@ async fn main() -> Result<MsgResponseType> {
     //
     // I consider this kind of hack and not a proper solution, but it works.
     // A proper solution would probably use a channel to send the shutdown signal.
+    // But, perhaps this isn't hacky at all. Perhaps this is a perfectly valid solution.
 
-    // Spawn application as a separate task
-    tokio::spawn(async move { main_loop().await });
-
-    // Await the shutdown signal
-    match tokio::signal::ctrl_c().await {
-        Ok(()) => {
-            println!(
-                "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
-                SHUTDOWN_INTERVAL_SECS
-            );
-            tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
-        }
-        Err(err) => {
-            // We also shut down in case of an error.
-            eprintln!("Unable to listen for the shutdown signal: {}", err);
-        }
-    }
+    // // Spawn application as a separate task
+    // tokio::spawn(async move { main_loop().await });
+    //
+    // // Await the shutdown signal
+    // match tokio::signal::ctrl_c().await {
+    //     Ok(()) => {
+    //         println!(
+    //             "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+    //             SHUTDOWN_INTERVAL_SECS
+    //         );
+    //         tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
+    //     }
+    //     Err(err) => {
+    //         // We also shut down in case of an error.
+    //         eprintln!("Unable to listen for the shutdown signal: {}", err);
+    //     }
+    // }
 
     // Send the shutdown signal to task and wait for it to shut down
     // Implement broadcasting or sending the shutdown signal...
