@@ -408,19 +408,21 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T1
 
 ## Conclusion
 
-- This application fetches data from a remote API, so it is relatively I/O-bound.
+- This application fetches data from a remote API, so it is relatively **I/O-bound**.
 - There are some light calculations taking place, but I believe that the application is more on the I/O-bound side.
 - The `async/await` paradigm copes well with this kind of application.
-- We also implemented the Actor Model. It uses message passing between actors.
+- We also implemented the **Actor Model**. It uses message passing between actors.
     - Actors slow down execution a little, but not too much in case of this application.
     - They work quite nicely and can be configured and customized to our liking.
     - We were able to use third-party Actor frameworks, as well as our own implementation.
         - Actix and our implementation didn't show much difference in performance in this application, if any.
-    - Actors can be combined with `rayon`.
-- Working with *chunks* of data instead of with individual pieces of data improves performance.
+    - Actors can be combined successfully with `rayon`.
+- Working with **chunks** of data instead of with individual pieces of data improves performance.
     - Not all chunk sizes perform the same, so we need to find a sweet spot - an optimal chunk size.
+    - The optimal chunk size depends on implementation in general, but in our case it didn't vary much,
+      if at all, between different implementations.
 - It probably helps even more so in a distributed setting (a distributed network of nodes) to send larger messages,
-  than smaller ones, in both ways, which means to work with chunks instead of individual symbols.
+  than smaller ones, in both ways, which means to work with **chunks** instead of individual symbols.
 - We couldn't measure execution time 100% properly in case of Actors with asynchronous code, but it's close.
     - Namely, we send `start` time in a message and ultimately forward it to the Writer Actor which
       then calculates and prints the execution time after it has written results to the file in each iteration,
@@ -432,9 +434,21 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T1
       small inconveniences.
 - The fastest solution is asynchronous (using `tokio`) without actors, but very close to it is asynchronous solution
   using `rayon` without actors.
+- **Graceful shutdown** is implemented by means of waiting (sleeping) for some time in the `main()` function,
+  giving the running tasks time to finish.
 
 ## Potential Modifications, Improvements or Additions
 
+- Try implementing **graceful shutdown** by using
+  [CancellationToken](https://docs.rs/tokio-util/latest/tokio_util/sync/struct.CancellationToken.html)s
+  and/or [TaskTracker](https://docs.rs/tokio-util/latest/tokio_util/task/task_tracker/struct.TaskTracker.html)
+  that we'd send to all actors (perhaps `WriterActor` doesn't need it).
+    - Actors complicate this a little, and our current solution works well - it's fully-graceful.
+    - Actors or no Actors, we are working with chunks of data,
+      so do we have to handle `CTRL+C` all the way down to the `calculate()` functions in
+      [async_signals.rs](./src/async_signals.rs)?
+    - Namely, we don't want to have some symbols processed and some omitted. If we start fetching and processing
+      symbols in a new iteration, we'd like to have them all processed.
 - Add tracing or at least logging.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.

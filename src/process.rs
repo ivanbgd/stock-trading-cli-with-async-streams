@@ -134,6 +134,7 @@ pub fn write_to_csv(
     Ok(())
 }
 
+// Currently unused, but also unneeded.
 pub fn stop_writer(mut writer: Option<BufWriter<File>>) -> Result<()> {
     if let Some(writer) = &mut writer {
         writer
