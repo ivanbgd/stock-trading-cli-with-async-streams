@@ -84,7 +84,7 @@ pub async fn main_loop() -> Result<MsgResponseType> {
     // by using a single writer actor.
     // let writer_address = WriterActor::new().start();
 
-    // let mut interval = stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
+    // let mut interval = async_std::stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
     let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
     // while let Some(_) = interval.next().await {

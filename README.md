@@ -439,6 +439,17 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T1
 
 ## Potential Modifications, Improvements or Additions
 
+- Find ways to **publish and subscribe** to messages without explicit calls.
+    - [actix](https://crates.io/crates/actix) might support this feature through the use
+      of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);
+      also [see here](https://actix.rs/docs/actix/address#recipient).
+        - [We tried to do this](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/tree/cff6a85614817673ca41987ba3f8f8049a3b1df0),
+          to no avail. Perhaps we are missing something, or perhaps Actix doesn't allow actors to be both a publisher
+          and a subscriber at the same time, which is what we need.
+    - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
+      been updated in about three years. Also, `actix` is far more popular.
+        - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
+          [this commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/commit/d4f53a7499ef9ceee988a6e3d5d26d518e25f6eb).
 - Try implementing **graceful shutdown** by using
   [CancellationToken](https://docs.rs/tokio-util/latest/tokio_util/sync/struct.CancellationToken.html)s
   and/or [TaskTracker](https://docs.rs/tokio-util/latest/tokio_util/task/task_tracker/struct.TaskTracker.html)
@@ -452,16 +463,6 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-07-03T1
 - Add tracing or at least logging.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
-- Rename "output.csv" to "<current_date_and_time_with_tz>.csv".
+- Rename "output.csv" to "<output_current_date_and_time_with_tz>.csv".
     - Use RFC2822, or RFC3339, or ISO 8601 or any other format.
-- Find ways to publish and subscribe to messages without explicit calls.
-    - [actix](https://crates.io/crates/actix) might support this feature through the use
-      of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);
-      also [see here](https://actix.rs/docs/actix/address#recipient).
-        - [We tried to do this](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/tree/cff6a85614817673ca41987ba3f8f8049a3b1df0),
-          to no avail. Perhaps we are missing something, or perhaps Actix doesn't allow actors to be both a publisher
-          and a subscriber at the same time, which is what we need.
-    - [xactor](https://crates.io/crates/xactor) does support the feature, but at the time of this writing, it hadn't
-      been updated in about three years. Also, `actix` is far more popular.
-        - Still, a `xactor` implementation with three different Actors and with publish/subscribe model can be found in
-          [this commit](https://github.com/ivanbgd/stock-trading-cli-with-async-streams/commit/d4f53a7499ef9ceee988a6e3d5d26d518e25f6eb).
+    - We can just pass `OffsetDateTime::now_utc()`, which is in UTC TZ.
