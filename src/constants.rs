@@ -13,3 +13,5 @@ pub const CSV_FILE_NAME: &str = "output.csv";
 
 pub const ACTOR_CHANNEL_CAPACITY: usize = 1;
 pub const SHUTDOWN_CHANNEL_CAPACITY: usize = 1;
+
+pub const ADDRESS: &str = "127.0.0.1:3000";

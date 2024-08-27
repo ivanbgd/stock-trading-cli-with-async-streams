@@ -1,15 +1,41 @@
 use anyhow::Result;
+use axum::Router;
+use axum::routing::get;
+use tracing_subscriber::EnvFilter;
 
-use stock::constants::SHUTDOWN_INTERVAL_SECS;
+use stock::constants::{ADDRESS, SHUTDOWN_INTERVAL_SECS};
+use stock::handlers::{get_desc, get_tail, root};
 use stock::logic::main_loop;
 use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
 
-// #[async_std::main]
 // #[actix::main]
 #[tokio::main]
 async fn main() -> Result<MsgResponseType> {
-    println!();
+    // initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    // This solution waits for tasks to fully finish by sleeping for some time.
+    // It uses tokio.
+    // This supports a fully-graceful shutdown, meaning all symbols will be fetched and processed
+    // when a CTRL+C signal arrives.
+
+    // spawn application as a separate task
+    tracing::info!("starting the app");
+    tokio::spawn(async move { main_loop().await });
+
+    // build our application with a route
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/desc", get(get_desc))
+        .route("/tail/:n", get(get_tail));
+
+    // run our app with hyper
+    let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
+    tracing::info!("listening on {}", listener.local_addr()?);
+    axum::serve(listener, app).await?;
 
     // // This doesn't fully support a graceful shutdown.
     // // This works with any async executor.
@@ -28,18 +54,11 @@ async fn main() -> Result<MsgResponseType> {
     // // might support tokio.
     // main_loop().await?;
 
-    // This solution waits for tasks to fully finish by sleeping for some time.
-    // It uses tokio.
-    // This supports a fully-graceful shutdown, meaning all symbols will be fetched and processed
-    // when a CTRL+C signal arrives.
-
-    // Spawn application as a separate task
-    tokio::spawn(async move { main_loop().await });
-
+    // TODO: Give these info/error messages to axum's signal (ctrl+c) handler - for graceful shutdown, and then remove this
     // Await the shutdown signal
     match tokio::signal::ctrl_c().await {
         Ok(()) => {
-            println!(
+            tracing::info!(
                 "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
                 SHUTDOWN_INTERVAL_SECS
             );
@@ -47,11 +66,11 @@ async fn main() -> Result<MsgResponseType> {
         }
         Err(err) => {
             // We also shut down in case of an error.
-            eprintln!("Unable to listen for the shutdown signal: {}", err);
+            tracing::error!("Unable to listen for the shutdown signal: {}", err);
         }
     }
 
-    println!("Exiting now.");
+    tracing::info!("Exiting now.");
 
     Ok(())
 }
