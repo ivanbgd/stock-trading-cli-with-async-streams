@@ -361,7 +361,9 @@ The `git` commit history contains descriptive comments.
   [here](https://www.reddit.com/r/rust/comments/6lsead/problems_with_ctrlc_handling_under_rust_in_windows/).
   The solution is to run the binary directly and not through `cargo`.
 - Since **tracing** is provided, you can enable the tracing output by `export RUST_LOG=INFO`, or `DEBUG`, etc.
-- The `variant` option is available for deciding whether to use `rayon`; see help. This hasn't been fully implemented.
+- The `variant` option is available for deciding between my implementation of actors (default)[, Actix implementation
+  of actors (currently not supported)], or implementation without actors - all those with or without rayon (default);
+  see help. This hasn't been fully implemented - Actix actors are currently not supported.
     - This is used for easier testing and timing, as we only have to build once this way.
 
 ### Example 1: Provide Some Symbols On the Command Line
@@ -464,7 +466,7 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-01-01T1
       [async_signals.rs](./src/async_signals.rs)?
     - Namely, we don't want to have some symbols processed and some omitted. If we start fetching and processing
       symbols in a new iteration, we'd like to have them all processed.
-- Add tracing or at least logging.
+- Support Actix actors through CLI argument.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
 - Rename "output.csv" to "<output_current_date_and_time_with_tz>.csv".

@@ -11,7 +11,7 @@ pub struct Args {
     pub from: String,
 
     /// Symbols
-    #[arg(short, long, default_value = "AAPL,AMZN,GOOG,MSFT")]
+    #[arg(short, long, default_value = "AAPL,AMZN,BBB,GOOG,MSFT")]
     pub symbols: String,
 
     /// Implementation variant
