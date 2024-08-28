@@ -10,8 +10,8 @@ use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
 
 // #[actix::main]
-#[tokio::main]
-async fn main() -> Result<MsgResponseType> {
+// #[tokio::main]
+fn main() -> Result<MsgResponseType> {
     // initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -40,7 +40,7 @@ async fn main() -> Result<MsgResponseType> {
     // With #[actix::main]:
     // "thread 'main' panicked at /Users/ivan/.cargo/registry/src/index.crates.io-6f17d22bba15001f/actix-0.13.5/src/context.rs:148:9:
     // `spawn_local` called from outside of a `task::LocalSet`"
-    tokio::spawn(async move { main_loop().await });
+    // tokio::spawn(async move { main_loop().await });
 
     // doesn't start main loop - doesn't panic, but simply ignores it
     // std::thread::spawn(|| async move { main_loop().await });
@@ -53,9 +53,19 @@ async fn main() -> Result<MsgResponseType> {
     //     .block_on(async move { main_loop().await })
     //     .unwrap();
 
-    // Don't wrap main() with any runtime!
-    // "thread 'main-tokio' panicked at /Users/ivan/.cargo/registry/src/index.crates.io-6f17d22bba15001f/actix-0.13.5/src/context.rs:148:9:
-    // `spawn_local` called from outside of a `task::LocalSet`"
+    // // "thread 'main' panicked at /Users/ivan/.cargo/registry/src/index.crates.io-6f17d22bba15001f/actix-0.13.5/src/context.rs:148:9:
+    // // `spawn_local` called from outside of a `task::LocalSet`"
+    // // Create the runtime
+    // let rt = tokio::runtime::Runtime::new()?;
+    // // Spawn the root task
+    // rt.block_on(async {
+    //     let _ = main_loop().await;
+    // });
+
+    // // Don't wrap main() with any runtime!
+    // // "thread 'main-tokio' panicked at /Users/ivan/.cargo/registry/src/index.crates.io-6f17d22bba15001f/actix-0.13.5/src/context.rs:148:9:
+    // // `spawn_local` called from outside of a `task::LocalSet`"
+    // // BLOCKS!
     // actix_rt::System::with_tokio_rt(|| {
     //     tokio::runtime::Builder::new_multi_thread()
     //         .enable_all()
@@ -66,7 +76,55 @@ async fn main() -> Result<MsgResponseType> {
     // })
     // .block_on(async_main());
 
-    let local = tokio::task::LocalSet::new();
+    // Works with or without the "tokio" feature in axum.
+    // Don't wrap main() with any runtime!
+    // Create the runtime
+    let rt = actix_rt::Runtime::new()?;
+    // Spawn the root task - BLOCKS!
+    // Runs the provided future, blocking the current thread until the future completes.
+    rt.block_on(async {
+        let _ = main_loop().await;
+
+        // doesn't run
+        // // build our application with a route
+        // let app = Router::new()
+        //     .route("/", get(root))
+        //     .route("/desc", get(get_desc))
+        //     .route("/tail/:n", get(get_tail));
+        //
+        // // run our app with hyper
+        // let listener = tokio::net::TcpListener::bind(ADDRESS).await.unwrap();
+        // tracing::info!("listening on {}", listener.local_addr().unwrap());
+        // axum::serve(listener, app).await.unwrap();
+
+        // await the shutdown signal - doesn't work
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {
+                tracing::info!(
+                    "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+                    SHUTDOWN_INTERVAL_SECS
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
+            }
+            Err(err) => {
+                // We also shut down in case of an error.
+                tracing::error!("Unable to listen for the shutdown signal: {}", err);
+            }
+        }
+    });
+
+    // // build our application with a route
+    // let app = Router::new()
+    //     .route("/", get(root))
+    //     .route("/desc", get(get_desc))
+    //     .route("/tail/:n", get(get_tail));
+    //
+    // // run our app with hyper
+    // let listener = tokio::net::TcpListener::bind(ADDRESS).await.unwrap();
+    // tracing::info!("listening on {}", listener.local_addr().unwrap());
+    // axum::serve(listener, app).await.unwrap();
+
+    // let local = tokio::task::LocalSet::new();
 
     // local
     //     .run_until(async move {
@@ -104,51 +162,51 @@ async fn main() -> Result<MsgResponseType> {
     //     })
     //     .await;
 
-    // "thread 'tokio-runtime-worker' panicked at /Users/ivan/.cargo/registry/src/index.crates.io-6f17d22bba15001f/actix-0.13.5/src/context.rs:148:9:
-    // `spawn_local` called from outside of a `task::LocalSet`"
-    local
-        .run_until(async move {
-            // build our application with a route
-            let app = Router::new()
-                .route("/", get(root))
-                .route("/desc", get(get_desc))
-                .route("/tail/:n", get(get_tail));
+    // // "thread 'tokio-runtime-worker' panicked at /Users/ivan/.cargo/registry/src/index.crates.io-6f17d22bba15001f/actix-0.13.5/src/context.rs:148:9:
+    // // `spawn_local` called from outside of a `task::LocalSet`"
+    // local
+    //     .run_until(async move {
+    //         // build our application with a route
+    //         let app = Router::new()
+    //             .route("/", get(root))
+    //             .route("/desc", get(get_desc))
+    //             .route("/tail/:n", get(get_tail));
+    //
+    //         // run our app with hyper
+    //         let listener = tokio::net::TcpListener::bind(ADDRESS).await.unwrap();
+    //         tracing::info!("listening on {}", listener.local_addr().unwrap());
+    //         axum::serve(listener, app).await.unwrap();
+    //     })
+    //     .await;
 
-            // run our app with hyper
-            let listener = tokio::net::TcpListener::bind(ADDRESS).await.unwrap();
-            tracing::info!("listening on {}", listener.local_addr().unwrap());
-            axum::serve(listener, app).await.unwrap();
-        })
-        .await;
+    // // await the shutdown signal
+    // match tokio::signal::ctrl_c().await {
+    //     Ok(()) => {
+    //         tracing::info!(
+    //             "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+    //             SHUTDOWN_INTERVAL_SECS
+    //         );
+    //         tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
+    //     }
+    //     Err(err) => {
+    //         // We also shut down in case of an error.
+    //         tracing::error!("Unable to listen for the shutdown signal: {}", err);
+    //     }
+    // }
 
-    // await the shutdown signal
-    match tokio::signal::ctrl_c().await {
-        Ok(()) => {
-            tracing::info!(
-                "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
-                SHUTDOWN_INTERVAL_SECS
-            );
-            tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
-        }
-        Err(err) => {
-            // We also shut down in case of an error.
-            tracing::error!("Unable to listen for the shutdown signal: {}", err);
-        }
-    }
-
-    local.await;
+    // local.await;
 
     tracing::info!("Exiting now.");
 
     Ok(())
 }
 
-async fn _async_main() {
+async fn async_main() {
     tokio::spawn(async move {
-        println!("From main tokio thread");
+        // println!("From main tokio thread");
         tracing::info!("From main tokio thread");
 
-        let _ = main_loop().await;
+        // let _ = main_loop().await;
 
         // Would panic if uncommented printing: "System is not running"
         // println!("{:?}", actix_rt::System::current());
@@ -165,18 +223,18 @@ async fn _async_main() {
     tracing::info!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
 
-    // await the shutdown signal
-    match tokio::signal::ctrl_c().await {
-        Ok(()) => {
-            tracing::info!(
-                "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
-                SHUTDOWN_INTERVAL_SECS
-            );
-            tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
-        }
-        Err(err) => {
-            // We also shut down in case of an error.
-            tracing::error!("Unable to listen for the shutdown signal: {}", err);
-        }
-    }
+    // // await the shutdown signal
+    // match tokio::signal::ctrl_c().await {
+    //     Ok(()) => {
+    //         tracing::info!(
+    //             "\nCTRL+C received. Giving tasks some time ({} s) to finish...",
+    //             SHUTDOWN_INTERVAL_SECS
+    //         );
+    //         tokio::time::sleep(tokio::time::Duration::from_secs(SHUTDOWN_INTERVAL_SECS)).await;
+    //     }
+    //     Err(err) => {
+    //         // We also shut down in case of an error.
+    //         tracing::error!("Unable to listen for the shutdown signal: {}", err);
+    //     }
+    // }
 }

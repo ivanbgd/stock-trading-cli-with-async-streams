@@ -67,6 +67,8 @@ trait Actor<R> {
 
     /// Start the [`Actor`]
     async fn start(&mut self) -> Result<MsgResponseType> {
+        tracing::debug!("Actor is started.");
+
         Ok(())
     }
 
@@ -168,6 +170,8 @@ impl Actor<MsgResponseType> for UniversalActor {
 
     /// Run the [`UniversalActor`]
     async fn run(&mut self) -> Result<MsgResponseType> {
+        tracing::debug!("UniversalActor is running.");
+
         while let Some(msg) = self.receiver.recv().await {
             self.handle(msg).await?;
         }
@@ -232,10 +236,12 @@ impl UniversalActor {
             let closes = match Self::fetch_closing_data(&symbol, from, to, &provider).await {
                 Ok(closes) => closes,
                 Err(err) => {
-                    eprintln!(
+                    // eprintln!(
+                    tracing::error!(
                         "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
                          skipping the symbol.",
-                        err, symbol
+                        err,
+                        symbol
                     );
                     vec![]
                 }
@@ -307,12 +313,20 @@ impl UniversalActor {
                 rows.push(row);
 
                 // A simple way to output CSV data
-                println!(
+                // println!(
+                tracing::info!(
                     "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-                    from, symbol, last_price, pct_change, period_min, period_max, sma,
+                    from,
+                    symbol,
+                    last_price,
+                    pct_change,
+                    period_min,
+                    period_max,
+                    sma,
                 );
             } else {
-                eprintln!("Got no data for the symbol \"{}\".", symbol);
+                // eprintln!("Got no data for the symbol \"{}\".", symbol);
+                tracing::error!("Got no data for the symbol \"{}\".", symbol);
             }
         }
 
@@ -461,7 +475,7 @@ impl Actor<MsgResponseType> for WriterActor {
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
         #[cfg(debug_assertions)]
-        println!("WriterActor is started.");
+        // println!("WriterActor is started.");
         tracing::debug!("WriterActor is started.");
 
         self.run().await?;
@@ -474,7 +488,7 @@ impl Actor<MsgResponseType> for WriterActor {
     /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
     async fn run(&mut self) -> Result<MsgResponseType> {
         #[cfg(debug_assertions)]
-        println!("WriterActor is running.");
+        // println!("WriterActor is running.");
         tracing::debug!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
@@ -495,7 +509,7 @@ impl Actor<MsgResponseType> for WriterActor {
         };
 
         #[cfg(debug_assertions)]
-        println!("WriterActor is flushed and properly stopped.");
+        // println!("WriterActor is flushed and properly stopped.");
         tracing::debug!("WriterActor is flushed and properly stopped.");
     }
 
@@ -526,7 +540,8 @@ impl Actor<MsgResponseType> for WriterActor {
                 .context("Failed to flush to file. Data loss :/")?;
         }
 
-        println!("Took {:.3?} to complete.\n", start.elapsed());
+        // println!("Took {:.3?} to complete.\n", start.elapsed());
+        tracing::info!("Took {:.3?} to complete.\n", start.elapsed());
 
         Ok(())
     }
