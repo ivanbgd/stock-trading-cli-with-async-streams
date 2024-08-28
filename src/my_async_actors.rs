@@ -462,6 +462,7 @@ impl Actor<MsgResponseType> for WriterActor {
         self.writer = Some(BufWriter::new(file));
         #[cfg(debug_assertions)]
         println!("WriterActor is started.");
+        tracing::debug!("WriterActor is started.");
 
         self.run().await?;
 
@@ -474,6 +475,7 @@ impl Actor<MsgResponseType> for WriterActor {
     async fn run(&mut self) -> Result<MsgResponseType> {
         #[cfg(debug_assertions)]
         println!("WriterActor is running.");
+        tracing::debug!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
             self.handle(msg).await?;
@@ -494,6 +496,7 @@ impl Actor<MsgResponseType> for WriterActor {
 
         #[cfg(debug_assertions)]
         println!("WriterActor is flushed and properly stopped.");
+        tracing::debug!("WriterActor is flushed and properly stopped.");
     }
 
     /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`WriterActor`] actor

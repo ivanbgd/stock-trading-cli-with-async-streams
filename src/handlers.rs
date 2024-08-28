@@ -7,6 +7,8 @@ use axum::http::StatusCode;
 use axum::response::Html;
 use serde::Serialize;
 
+use crate::constants::BUFFER_SIZE;
+
 // TODO
 /// List of last n signals
 #[derive(Serialize)]
@@ -41,6 +43,7 @@ pub async fn get_desc() -> Html<&'static str> {
 ///
 /// GET /tail/n
 pub async fn get_tail(Path(n): Path<usize>) -> Json<Tail> {
+    let n = n.clamp(0, BUFFER_SIZE);
     let tail = last_n_signals(n).await;
     Json(tail)
 }
@@ -49,6 +52,6 @@ pub async fn get_tail(Path(n): Path<usize>) -> Json<Tail> {
 /// todo: describe
 async fn last_n_signals(n: usize) -> Tail {
     let all: Vec<u8> = vec![1, 2, 3, 4, 5];
-    let tail = all.iter().take(n).map(|&x| x).collect();
+    let tail = all.iter().take(n).copied().collect();
     Tail { tail }
 }

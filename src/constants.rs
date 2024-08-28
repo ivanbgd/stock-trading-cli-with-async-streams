@@ -15,3 +15,5 @@ pub const ACTOR_CHANNEL_CAPACITY: usize = 1;
 pub const SHUTDOWN_CHANNEL_CAPACITY: usize = 1;
 
 pub const ADDRESS: &str = "127.0.0.1:3000";
+
+pub const BUFFER_SIZE: usize = 10;

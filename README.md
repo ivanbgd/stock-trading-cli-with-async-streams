@@ -346,6 +346,7 @@ The `git` commit history contains descriptive comments.
 
 ## Running the App
 
+- Help is available, via `--help` or `-h` option.
 - The application requires the `from` and the `symbols` arguments.
 - The `from` date and time argument should be provided in the [RFC3339](https://datatracker.ietf.org/doc/html/rfc3339)
   format.
@@ -359,6 +360,7 @@ The `git` commit history contains descriptive comments.
   and this can be problematic only on Windows, as discussed
   [here](https://www.reddit.com/r/rust/comments/6lsead/problems_with_ctrlc_handling_under_rust_in_windows/).
   The solution is to run the binary directly and not through `cargo`.
+- Since **tracing** is provided, you can enable the tracing output by `export RUST_LOG=INFO`, or `DEBUG`, etc.
 
 ### Example 1: Provide Some Symbols On the Command Line
 
