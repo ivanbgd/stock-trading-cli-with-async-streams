@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
 use clap::{Parser, ValueEnum};
 
@@ -15,7 +15,6 @@ pub struct Args {
     pub symbols: String,
 
     /// Implementation variant
-    // #[arg(long, default_value_t = ImplementationVariant::MyActorsNoRayon)]
     #[arg(long, default_value = "my-actors-no-rayon")]
     pub variant: ImplementationVariant,
 }
@@ -46,7 +45,7 @@ pub enum ImplementationVariant {
 //     }
 // }
 
-// We don't need to implement Display thanks to ValueEnum.
+// We don't need to implement std::fmt::Display thanks to ValueEnum.
 
 // impl Display for ImplementationVariant {
 //     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

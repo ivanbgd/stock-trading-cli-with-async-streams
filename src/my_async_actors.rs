@@ -237,7 +237,7 @@ impl UniversalActor {
                 Ok(closes) => closes,
                 Err(err) => {
                     // eprintln!(
-                    tracing::error!(
+                    tracing::warn!(
                         "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
                          skipping the symbol.",
                         err,
@@ -326,7 +326,7 @@ impl UniversalActor {
                 );
             } else {
                 // eprintln!("Got no data for the symbol \"{}\".", symbol);
-                tracing::error!("Got no data for the symbol \"{}\".", symbol);
+                tracing::warn!("Got no data for the symbol \"{}\".", symbol);
             }
         }
 

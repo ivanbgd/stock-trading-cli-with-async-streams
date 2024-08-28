@@ -14,7 +14,6 @@ actix = { version = "0.13.5" }
 actix-rt = { version = "2.10.0" }
 anyhow = { version = "1.0.86" }
 axum = { version = "0.7.5", features = ["macros"] }
-#axum = { version = "0.7.5", features = ["macros", "tokio"] }
 clap = { version = "4.5.16", features = ["derive"] }
 futures = { version = "0.3.30" }
 rayon = { version = "1.10.0" }
