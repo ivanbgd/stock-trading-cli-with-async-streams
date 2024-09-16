@@ -139,7 +139,7 @@ impl AsyncStockSignal for WindowedSMA {
 mod tests {
     use super::*;
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_min_price_calculate() {
         let signal = MinPrice {};
         assert_eq!(signal.calculate(&[]).await, None);
@@ -157,7 +157,7 @@ mod tests {
         );
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_max_price_calculate() {
         let signal = MaxPrice {};
         assert_eq!(signal.calculate(&[]).await, None);
@@ -175,7 +175,7 @@ mod tests {
         );
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_price_difference_calculate() {
         let signal = PriceDifference {};
         assert_eq!(signal.calculate(&[]).await, None);
@@ -193,7 +193,7 @@ mod tests {
         );
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_windowed_sma_calculate() {
         let series = vec![2.0, 4.5, 5.3, 6.5, 4.7];
 
