@@ -240,7 +240,6 @@ impl UniversalActor {
             let closes = match Self::fetch_closing_data(&symbol, from, to, &provider).await {
                 Ok(closes) => closes,
                 Err(err) => {
-                    // eprintln!(
                     tracing::warn!(
                         "There was an API error \"{}\" while fetching data for the symbol \"{}\"; \
                          skipping the symbol.",
@@ -317,7 +316,6 @@ impl UniversalActor {
                 rows.push(row);
 
                 // A simple way to output CSV data
-                // println!(
                 tracing::info!(
                     "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
                     from,
@@ -329,7 +327,6 @@ impl UniversalActor {
                     sma,
                 );
             } else {
-                // eprintln!("Got no data for symbol \"{}\".", symbol);
                 tracing::warn!("Got no data for symbol \"{}\".", symbol);
             }
         }
@@ -484,8 +481,6 @@ impl Actor<MsgResponseType> for WriterActor {
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
-        // #[cfg(debug_assertions)]
-        // println!("WriterActor is started.");
         tracing::debug!("WriterActor is started.");
 
         self.run().await?;
@@ -497,8 +492,6 @@ impl Actor<MsgResponseType> for WriterActor {
     ///
     /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
     async fn run(&mut self) -> Result<MsgResponseType> {
-        // #[cfg(debug_assertions)]
-        // println!("WriterActor is running.");
         tracing::debug!("WriterActor is running.");
 
         while let Some(msg) = self.receiver.recv().await {
@@ -518,8 +511,6 @@ impl Actor<MsgResponseType> for WriterActor {
                 .expect("Failed to flush writer. Data loss :(")
         };
 
-        // #[cfg(debug_assertions)]
-        // println!("WriterActor is flushed and properly stopped.");
         tracing::debug!("WriterActor is flushed and properly stopped.");
     }
 
@@ -550,8 +541,9 @@ impl Actor<MsgResponseType> for WriterActor {
                 .context("Failed to flush to file. Data loss :/")?;
         }
 
-        // println!("Took {:.3?} to complete.\n", start.elapsed());
-        tracing::info!("Took {:.3?} to complete.\n", start.elapsed());
+        tracing::info!("Took {:.3?} to complete.", start.elapsed());
+        #[cfg(debug_assertions)]
+        println!("Took {:.3?} to complete.\n", start.elapsed());
 
         Ok(())
     }
