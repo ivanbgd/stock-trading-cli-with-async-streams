@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
+use crate::constants::{CSV_FILE_PATH, CSV_HEADER, WINDOW_SIZE};
 use crate::types::MsgResponseType;
 
 // ============================================================================
@@ -293,7 +293,7 @@ impl Default for WriterActor {
 impl WriterActor {
     pub fn new() -> Self {
         Self {
-            file_name: CSV_FILE_NAME.to_string(),
+            file_name: CSV_FILE_PATH.to_string(),
             writer: None,
         }
     }

@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
+use crate::constants::{CSV_FILE_PATH, CSV_HEADER, WINDOW_SIZE};
 
 /// Retrieves data for a single symbol from a data provider and extracts the closing prices
 ///
@@ -98,7 +98,7 @@ pub async fn handle_symbol_data(
 }
 
 pub fn start_writer() -> Result<Option<BufWriter<File>>> {
-    let file_name = CSV_FILE_NAME.to_string();
+    let file_name = CSV_FILE_PATH.to_string();
     let mut file = File::create(&file_name)
         .context(format!("Could not open target file \"{}\".", file_name))?;
     let _ = writeln!(&mut file, "{}", CSV_HEADER);

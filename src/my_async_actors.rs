@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{ACTOR_CHANNEL_CAPACITY, CSV_FILE_NAME, CSV_HEADER, WINDOW_SIZE};
+use crate::constants::{ACTOR_CHANNEL_CAPACITY, CSV_FILE_PATH, CSV_HEADER, WINDOW_SIZE};
 use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 
 // ============================================================================
@@ -468,7 +468,7 @@ impl Actor<MsgResponseType> for WriterActor {
     fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
         Self {
             receiver,
-            file_name: CSV_FILE_NAME.to_string(),
+            file_name: CSV_FILE_PATH.to_string(),
             writer: None,
         }
     }
@@ -595,6 +595,160 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
     }
 
     /// Send a message to an [`WriterActor`] instance through the [`WriterActorHandle`]
+    async fn send(
+        &self,
+        msg: PerformanceIndicatorsRowsMsg,
+    ) -> Result<MsgResponseType, WriterMsgErrorType> {
+        self.sender.send(msg).await
+    }
+}
+
+// ============================================================================
+//
+//             [`CollectionActor`], [`CollectionActorHandle`]
+//
+// ============================================================================
+
+/// Actor for collecting calculated performance indicators for fetched stock data into a buffer
+///
+/// It is used for storing the performance data in a buffer of capacity `N`,
+/// where `N` is the number of main loop iterations that occur at a fixed time interval.
+///
+/// These data can then be fetched by the web server.
+///
+/// It is not made public on purpose.
+///
+/// It can only be created through [`CollectionActorHandle`], which is public.
+struct CollectionActor {
+    receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>,
+}
+
+impl Actor<MsgResponseType> for CollectionActor {
+    type Msg = PerformanceIndicatorsRowsMsg;
+
+    /// Create a new [`CollectionActor`]
+    fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
+        Self { receiver }
+    }
+
+    /// Start the [`CollectionActor`]
+    ///
+    /// This function is meant to be used directly in the [`CollectionActorHandle`].
+    async fn start(&mut self) -> Result<MsgResponseType> {
+        // TODO: set up buffer
+        // TODO: maybe set up link to web server
+        tracing::debug!("CollectionActor is started.");
+
+        self.run().await?;
+
+        Ok(())
+    }
+
+    /// Run the [`CollectionActor`]
+    ///
+    /// This function is meant to be used indirectly - only through the [`CollectionActor::start`] function
+    async fn run(&mut self) -> Result<MsgResponseType> {
+        tracing::debug!("CollectionActor is running.");
+
+        while let Some(msg) = self.receiver.recv().await {
+            self.handle(msg).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Stop the [`CollectionActor`]
+    ///
+    /// This function is meant to be called in the [`CollectionActor`]'s destructor.
+    fn stop(&mut self) {
+        // TODO
+
+        tracing::debug!("CollectionActor is flushed and properly stopped.");
+    }
+
+    /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`CollectionActor`] actor
+    ///
+    /// Writes data to buffer and measures & prints the iteration's execution time.
+    async fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> Result<MsgResponseType> {
+        // TODO
+
+        let from = msg.from;
+        let rows = msg.rows;
+        let start = msg.start;
+
+        // if let Some(file) = &mut self.writer {
+        //     for row in rows {
+        //         let _ = writeln!(
+        //             file,
+        //             "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+        //             from,
+        //             row.symbol,
+        //             row.last_price,
+        //             row.pct_change,
+        //             row.period_min,
+        //             row.period_max,
+        //             row.sma,
+        //         );
+        //     }
+        //
+        //     file.flush()
+        //         .context("Failed to flush to file. Data loss :/")?;
+        // }
+
+        tracing::info!("Took {:.3?} to complete.", start.elapsed());
+        #[cfg(debug_assertions)]
+        println!("Took {:.3?} to complete.\n", start.elapsed());
+
+        Ok(())
+    }
+}
+
+impl Drop for CollectionActor {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// A handle for the [`CollectionActor`]
+///
+/// Only the handle is public; the [`CollectionActor`] isn't.
+///
+/// We can only create [`CollectionActor`]s through the [`CollectionActorHandle`].
+///
+/// It contains the `sender` field, which represents
+/// a sender of the [`PerformanceIndicatorsRowsMsg`] in an MPSC channel.
+///
+/// The handle is the sender, and the actor is the receiver
+/// of a message in the channel.
+///
+/// We only create a single [`CollectionActor`] instance in a [`CollectionActorHandle`].
+#[derive(Clone)]
+pub struct CollectionActorHandle {
+    sender: mpsc::Sender<crate::my_async_actors::PerformanceIndicatorsRowsMsg>,
+}
+
+impl ActorHandle<MsgResponseType, WriterMsgErrorType> for CollectionActorHandle {
+    type Msg = PerformanceIndicatorsRowsMsg;
+
+    /// Create a new [`CollectionActorHandle`]
+    ///
+    /// This function creates a single [`CollectionActor`] instance,
+    /// and a MPSC channel for communicating with the actor.
+    ///
+    /// It also starts (runs) the actor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if it can't run the actor.
+    fn new() -> Self {
+        let (sender, receiver) = mpsc::channel(ACTOR_CHANNEL_CAPACITY);
+        let mut actor = CollectionActor::new(receiver);
+        tokio::spawn(async move { actor.start().await });
+
+        Self { sender }
+    }
+
+    /// Send a message to an [`CollectionActor`] instance through the [`CollectionActorHandle`]
     async fn send(
         &self,
         msg: PerformanceIndicatorsRowsMsg,

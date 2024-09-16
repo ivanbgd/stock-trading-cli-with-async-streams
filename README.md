@@ -290,6 +290,10 @@ We also included comparison of different implementations.
 
 - The actors are connected to the outside world.
 - We create a web service for this.
+- Available routes are (address and port are defined in [src/constants.rs](src/constants.rs)):
+    - http://127.0.0.1:3000/
+    - http://127.0.0.1:3000/desc
+    - http://127.0.0.1:3000/tail/n, where `n` is the number of the most recent signals (performance indicators)
 
 ## Additional Explanation
 

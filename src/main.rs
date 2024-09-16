@@ -5,7 +5,7 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use stock::cli::Args;
-use stock::constants::{ADDRESS, SHUTDOWN_INTERVAL_SECS};
+use stock::constants::{SHUTDOWN_INTERVAL_SECS, WEB_SERVER_ADDRESS};
 use stock::handlers::{get_desc, get_tail, root};
 use stock::logic::main_loop;
 use stock::types::MsgResponseType;
@@ -36,7 +36,7 @@ async fn main() -> Result<MsgResponseType> {
         .route("/tail/:n", get(get_tail));
 
     // run our app with hyper
-    let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
+    let listener = tokio::net::TcpListener::bind(WEB_SERVER_ADDRESS).await?;
     tracing::info!("listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
 
