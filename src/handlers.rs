@@ -16,7 +16,7 @@ pub struct Tail {
     tail: Vec<u8>,
 }
 
-// TODO: return what CLI used to show as output, I guess...
+// TODO: return what CLI used to show as output, but in JSON form, I guess...
 /// todo: describe
 ///
 /// content-type: application/json

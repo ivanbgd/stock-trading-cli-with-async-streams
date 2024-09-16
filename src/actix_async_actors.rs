@@ -231,7 +231,7 @@ impl Handler<SymbolsClosesMsg> for ProcessorActor {
                         from, symbol, last_price, pct_change, period_min, period_max, sma,
                     );
                 } else {
-                    eprintln!("Got no data for the symbol \"{}\".", symbol);
+                    eprintln!("Got no data for symbol \"{}\".", symbol);
                 }
             }
 

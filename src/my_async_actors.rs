@@ -55,11 +55,11 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 /// We are keeping it to make the solution a little more general, so
 /// that it can be modified easily if needed.
 ///
-/// Likewise, the trait has an associated type for messages to make it
-/// more general. It could have also been a generic type, `M`, but it's
-/// a little better to have an associated type instead.
+/// Likewise, the trait has an associated type for messages, `Msg`,
+/// to make it more general. It could have also been a generic type,
+/// `M`, but it's a little better to have an associated type instead.
 trait Actor<R> {
-    /// The type [`Self::Msg`] represents an incoming message type.
+    /// The associated type [`Self::Msg`] represents an incoming message type.
     type Msg;
 
     /// Create a new [`Actor`]
@@ -67,7 +67,8 @@ trait Actor<R> {
 
     /// Start the [`Actor`]
     async fn start(&mut self) -> Result<MsgResponseType> {
-        tracing::debug!("Actor is started.");
+        #[cfg(debug_assertions)]
+        tracing::debug!("Actor {:p} is started.", self);
 
         Ok(())
     }
@@ -76,7 +77,10 @@ trait Actor<R> {
     async fn run(&mut self) -> Result<R>;
 
     /// Stop the [`Actor`]
-    fn stop(&mut self) {}
+    fn stop(&mut self) {
+        #[cfg(debug_assertions)]
+        tracing::debug!("Actor {:p} is stopping.", self);
+    }
 
     /// Handle the message
     async fn handle(&mut self, msg: Self::Msg) -> Result<R>;
@@ -170,7 +174,7 @@ impl Actor<MsgResponseType> for UniversalActor {
 
     /// Run the [`UniversalActor`]
     async fn run(&mut self) -> Result<MsgResponseType> {
-        tracing::debug!("UniversalActor is running.");
+        tracing::debug!("UniversalActor {:p} is running.", self);
 
         while let Some(msg) = self.receiver.recv().await {
             self.handle(msg).await?;
@@ -325,8 +329,8 @@ impl UniversalActor {
                     sma,
                 );
             } else {
-                // eprintln!("Got no data for the symbol \"{}\".", symbol);
-                tracing::warn!("Got no data for the symbol \"{}\".", symbol);
+                // eprintln!("Got no data for symbol \"{}\".", symbol);
+                tracing::warn!("Got no data for symbol \"{}\".", symbol);
             }
         }
 
@@ -366,6 +370,12 @@ impl UniversalActor {
         }
 
         Ok(result)
+    }
+}
+
+impl Drop for UniversalActor {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -474,7 +484,7 @@ impl Actor<MsgResponseType> for WriterActor {
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         // println!("WriterActor is started.");
         tracing::debug!("WriterActor is started.");
 
@@ -487,7 +497,7 @@ impl Actor<MsgResponseType> for WriterActor {
     ///
     /// This function is meant to be used indirectly - only through the [`WriterActor::start`] function
     async fn run(&mut self) -> Result<MsgResponseType> {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         // println!("WriterActor is running.");
         tracing::debug!("WriterActor is running.");
 
@@ -508,7 +518,7 @@ impl Actor<MsgResponseType> for WriterActor {
                 .expect("Failed to flush writer. Data loss :(")
         };
 
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         // println!("WriterActor is flushed and properly stopped.");
         tracing::debug!("WriterActor is flushed and properly stopped.");
     }

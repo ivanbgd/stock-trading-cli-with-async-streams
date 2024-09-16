@@ -392,10 +392,11 @@ New symbols (tickers) added in 2024:
 $ cargo run -- --from 2024-01-01T12:00:09+00:00 --symbols KKR,CRWD,GDDY,VST,GEV,SOLV,SMCI,DECK
 ```
 
-Include a ticker that doesn't exist, BBB, for testing purposes:
+Include a ticker that doesn't exist, BBB, for testing purposes, but at the same time have more
+than one chunk (default chunk size is 5), for better debugging:
 
 ```shell
-$ cargo run -- --from 2024-01-01T12:00:09+00:00 --symbols AAPL,AMZN,BBB,GOOG,MSFT
+$ cargo run -- --from 2024-01-01T12:00:09+00:00 --symbols AAPL,AMZN,BBB,GOOG,MSFT,NVDA,UBER
 ```
 
 ### Example 2: Provide All Symbols From a File
