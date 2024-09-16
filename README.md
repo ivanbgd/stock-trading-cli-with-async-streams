@@ -333,12 +333,15 @@ The `git` commit history contains descriptive comments.
 - [actix](https://crates.io/crates/actix), as an Actor framework for Rust
 - [actix-rt](https://crates.io/crates/actix-rt), as Tokio-based single-threaded async runtime for the Actix ecosystem
 - [async-std](https://async.rs/), as an async library
+- [axum](https://crates.io/crates/axum), as a web framework
 - [clap](https://crates.io/crates/clap), for CLI arguments parsing
 - [futures](https://crates.io/crates/futures), for an implementation of futures (required for explicit concurrency
   with `async/await` paradigm)
 - [rayon](https://crates.io/crates/rayon), as a data-parallelism library for Rust
+- [serde](https://crates.io/crates/serde), as a framework for serializing and deserializing Rust data structures
 - [time](https://crates.io/crates/time), as a date and time library (used by `yahoo_finance_api`)
 - [Tokio](https://tokio.rs/), as an asynchronous runtime - used both directly and as a dependency of some other crates
+- [tracing](https://crates.io/crates/tracing), as a tool for application-level tracing for Rust
 - [xactor](https://crates.io/crates/xactor), as a Rust Actors framework based on async-std (it also supports Tokio as
   runtime instead of async-std, but we didn't use that)
 - [yahoo_finance_api](https://crates.io/crates/yahoo_finance_api), as an adapter for
@@ -466,6 +469,9 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-01-01T1
     - Namely, we don't want to have some symbols processed and some omitted. If we start fetching and processing
       symbols in a new iteration, we'd like to have them all processed.
 - Add support for different implementation variants through CLI argument.
+- Our blocking [std::fs::File](https://doc.rust-lang.org/std/fs/struct.File.html) implementation works well,
+  but consider trying out [tokio::fs::File](https://docs.rs/tokio/latest/tokio/fs/struct.File.html)
+  and/or [async_std::fs::File](https://docs.rs/async-std/latest/async_std/fs/struct.File.html) as well.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
 - Rename "output.csv" to "<output_current_date_and_time_with_tz>.csv".

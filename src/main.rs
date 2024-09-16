@@ -37,7 +37,7 @@ async fn main() -> Result<MsgResponseType> {
 
     // run our app with hyper
     let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
-    tracing::debug!("listening on {}", listener.local_addr()?);
+    tracing::info!("listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
 
     // // This doesn't fully support a graceful shutdown.
