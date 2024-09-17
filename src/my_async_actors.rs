@@ -496,6 +496,9 @@ impl Actor<MsgResponseType> for WriterActor {
         Self {
             receiver,
             file_name: CSV_FILE_PATH.to_string(),
+            // file_name: OffsetDateTime::now_utc()
+            //     .format(&Rfc3339) // or Rfc2822 (has blanks), Iso8601
+            //     .expect("The provided date or time format isn't correct."),
             writer: None,
         }
     }
@@ -506,6 +509,8 @@ impl Actor<MsgResponseType> for WriterActor {
     async fn start(&mut self) -> Result<MsgResponseType> {
         let mut file = File::create(&self.file_name)
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
+        #[cfg(debug_assertions)]
+        tracing::debug!("The output file name is \"{}\".", self.file_name);
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
         tracing::debug!("WriterActor is started.");

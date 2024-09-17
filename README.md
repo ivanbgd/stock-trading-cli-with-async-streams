@@ -296,7 +296,7 @@ We also included comparison of different implementations.
     - http://127.0.0.1:3000/tail/n - where `n` is the number of the most recent batches that a user wants to examine.
       Each batch contains processed data (performance indicators) for all S&P 500 symbols.
       The batches are created at regular time intervals.
-  
+
 ## Additional Explanation
 
 Check out the files that are provided for additional explanation:
@@ -480,6 +480,3 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-01-01T1
   and/or [async_std::fs::File](https://docs.rs/async-std/latest/async_std/fs/struct.File.html) as well.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
-- Rename "output.csv" to "<output_current_date_and_time_with_tz>.csv".
-    - Use RFC2822, or RFC3339, or ISO 8601 or any other format.
-    - We can just pass `OffsetDateTime::now_utc()`, which is in UTC TZ.
