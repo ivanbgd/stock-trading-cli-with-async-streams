@@ -291,10 +291,12 @@ We also included comparison of different implementations.
 - The actors are connected to the outside world.
 - We create a web service for this.
 - Available routes are (address and port are defined in [src/constants.rs](src/constants.rs)):
-    - http://127.0.0.1:3000/
-    - http://127.0.0.1:3000/desc
-    - http://127.0.0.1:3000/tail/n, where `n` is the number of the most recent signals (performance indicators)
-
+    - http://127.0.0.1:3000/ - shows program description
+    - http://127.0.0.1:3000/desc - shows program description
+    - http://127.0.0.1:3000/tail/n - where `n` is the number of the most recent batches that a user wants to examine.
+      Each batch contains processed data (performance indicators) for all S&P 500 symbols.
+      The batches are created at regular time intervals.
+  
 ## Additional Explanation
 
 Check out the files that are provided for additional explanation:

@@ -21,7 +21,13 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 
 // ============================================================================
 //
+//
+//
+//
 //                     Traits [`Actor`] & [`ActorHandle`]
+//
+//
+//
 //
 // ============================================================================
 
@@ -54,6 +60,15 @@ use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 /// message response types.
 /// We are keeping it to make the solution a little more general, so
 /// that it can be modified easily if needed.
+///
+/// Mind you, messages should **NOT** have a return value, as that
+/// would mean that the sending actor needs to block while waiting
+/// for the response.
+/// The receiving actor can deliver results/response in a reply message.
+///
+/// Regardless, we kept it, as it can be used if we want to return
+/// a result to the main thread, but we don't have to use it for
+/// communication between actors.
 ///
 /// Likewise, the trait has an associated type for messages, `Msg`,
 /// to make it more general. It could have also been a generic type,
@@ -122,7 +137,13 @@ pub(crate) trait ActorHandle<R, E> {
 
 // ============================================================================
 //
+//
+//
+//
 //        [`ActorMessage`], [`UniversalActor`], [`UniversalActorHandle`]
+//
+//
+//
 //
 // ============================================================================
 
@@ -183,7 +204,7 @@ impl Actor<MsgResponseType> for UniversalActor {
         Ok(())
     }
 
-    /// Handle the message
+    /// Handle the [`ActorMessage`]
     async fn handle(&mut self, msg: ActorMessage) -> Result<MsgResponseType> {
         match msg {
             ActorMessage::QuoteRequestsMsg {
@@ -218,7 +239,7 @@ impl UniversalActor {
     ///
     /// The message contains a hash map of `symbols` and associated `Vec<f64>` with closing prices for that symbol
     /// in case there was no error when fetching the data, or an empty vector in case of an error,
-    /// in which case it prints the error message to `stderr`.
+    /// in which case it logs the error message at the warning level.
     ///
     /// So, in case of an API error for a symbol, when trying to fetch its data,
     /// we don't break the program but rather continue, skipping the symbol.
@@ -421,7 +442,13 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
 
 // ============================================================================
 //
+//
+//
+//
 //  [`PerformanceIndicatorsRowsMsg`], [`WriterActor`], [`WriterActorHandle`]
+//
+//
+//
 //
 // ============================================================================
 
@@ -605,7 +632,13 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
 
 // ============================================================================
 //
+//
+//
+//
 //             [`CollectionActor`], [`CollectionActorHandle`]
+//
+//
+//
 //
 // ============================================================================
 
@@ -637,6 +670,7 @@ impl Actor<MsgResponseType> for CollectionActor {
     async fn start(&mut self) -> Result<MsgResponseType> {
         // TODO: set up buffer
         // TODO: maybe set up link to web server
+        // TODO: maybe set up a web server here!
         tracing::debug!("CollectionActor is started.");
 
         self.run().await?;
@@ -724,7 +758,7 @@ impl Drop for CollectionActor {
 /// We only create a single [`CollectionActor`] instance in a [`CollectionActorHandle`].
 #[derive(Clone)]
 pub struct CollectionActorHandle {
-    sender: mpsc::Sender<crate::my_async_actors::PerformanceIndicatorsRowsMsg>,
+    sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>,
 }
 
 impl ActorHandle<MsgResponseType, WriterMsgErrorType> for CollectionActorHandle {

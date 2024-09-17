@@ -1403,7 +1403,6 @@ dependencies = [
  "futures",
  "rayon",
  "serde",
- "serde_json",
  "time",
  "tokio",
  "tracing",
