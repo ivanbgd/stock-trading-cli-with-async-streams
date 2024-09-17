@@ -4,19 +4,25 @@
 
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use axum::Router;
+use axum::routing::get;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{ACTOR_CHANNEL_CAPACITY, CSV_FILE_PATH, CSV_HEADER, WINDOW_SIZE};
+use crate::constants::{
+    ACTOR_CHANNEL_CAPACITY, CSV_FILE_PATH, CSV_HEADER, TAIL_BUFFER_SIZE, WEB_SERVER_ADDRESS,
+    WINDOW_SIZE,
+};
+use crate::handlers::{get_desc, get_tail, root};
 use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
 
 // ============================================================================
@@ -164,12 +170,14 @@ pub enum ActorMessage {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     },
     SymbolsClosesMsg {
         symbols_closes: HashMap<String, Vec<f64>>,
         from: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     },
 }
@@ -212,19 +220,35 @@ impl Actor<MsgResponseType> for UniversalActor {
                 from,
                 to,
                 writer_handle,
+                collection_handle,
                 start,
             } => {
-                Self::handle_quote_requests_msg(symbols, from, to, writer_handle, start)
-                    .await
-                    .expect("Expected some result from `handle_quote_requests_msg()`");
+                Self::handle_quote_requests_msg(
+                    symbols,
+                    from,
+                    to,
+                    writer_handle,
+                    collection_handle,
+                    start,
+                )
+                .await
+                .expect("Expected some result from `handle_quote_requests_msg()`");
             }
             ActorMessage::SymbolsClosesMsg {
                 symbols_closes,
                 from,
                 writer_handle,
+                collection_handle,
                 start,
             } => {
-                Self::handle_symbols_closes_msg(symbols_closes, from, writer_handle, start).await;
+                Self::handle_symbols_closes_msg(
+                    symbols_closes,
+                    from,
+                    writer_handle,
+                    collection_handle,
+                    start,
+                )
+                .await;
             }
         }
 
@@ -251,6 +275,7 @@ impl UniversalActor {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     ) -> Result<MsgResponseType> {
         let provider = yahoo::YahooConnector::new().context(format!("Skipping: {:?}", symbols))?;
@@ -278,6 +303,7 @@ impl UniversalActor {
             symbols_closes,
             from,
             writer_handle,
+            collection_handle,
             start,
         };
 
@@ -299,6 +325,7 @@ impl UniversalActor {
         symbols_closes: HashMap<String, Vec<f64>>,
         from: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     ) -> MsgResponseType {
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
@@ -356,9 +383,15 @@ impl UniversalActor {
 
         // Send the message to the single writer actor.
         writer_handle
-            .send(perf_ind_msg)
+            .send(perf_ind_msg.clone())
             .await
             .expect("Couldn't send a message to the WriterActor.");
+
+        // Send the message to the single collection actor.
+        collection_handle
+            .send(perf_ind_msg)
+            .await
+            .expect("Couldn't send a message to the CollectionActor.");
     }
 
     /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
@@ -453,6 +486,7 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
 // ============================================================================
 
 /// A single row of calculated performance indicators for a symbol
+#[derive(Clone)]
 struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
@@ -471,6 +505,7 @@ struct PerformanceIndicatorsRow {
 ///
 /// We could have an oneshot channel for sending the response back in general case.
 /// We simply don't need it in our specific (custom) case.
+#[derive(Clone)]
 pub struct PerformanceIndicatorsRowsMsg {
     from: String,
     rows: Vec<PerformanceIndicatorsRow>,
@@ -626,7 +661,7 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
         &self,
         msg: PerformanceIndicatorsRowsMsg,
     ) -> Result<MsgResponseType, WriterMsgErrorType> {
-        self.sender.send(msg).await
+        self.sender.send(msg.clone()).await
     }
 }
 
@@ -635,25 +670,34 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
 //
 //
 //
-//             [`CollectionActor`], [`CollectionActorHandle`]
+//         [`Batch`], [`CollectionActor`], [`CollectionActorHandle`]
 //
 //
 //
 //
 // ============================================================================
 
-/// Actor for collecting calculated performance indicators for fetched stock data into a buffer
+/// A single iteration of the main loop, which contains processed data
+/// for all S&P 500 symbols
+pub(crate) struct Batch {
+    rows: Vec<PerformanceIndicatorsRow>,
+}
+
+/// The web server actor
+///
+/// It collects calculated performance indicators for fetched stock data into a buffer.
 ///
 /// It is used for storing the performance data in a buffer of capacity `N`,
 /// where `N` is the number of main loop iterations that occur at a fixed time interval.
 ///
-/// These data can then be fetched by the web server.
+/// These data can then be presented to the user.
 ///
 /// It is not made public on purpose.
 ///
 /// It can only be created through [`CollectionActorHandle`], which is public.
 struct CollectionActor {
     receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>,
+    buffer: VecDeque<Batch>,
 }
 
 impl Actor<MsgResponseType> for CollectionActor {
@@ -661,19 +705,32 @@ impl Actor<MsgResponseType> for CollectionActor {
 
     /// Create a new [`CollectionActor`]
     fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
-        Self { receiver }
+        Self {
+            receiver,
+            buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE),
+        }
     }
 
     /// Start the [`CollectionActor`]
     ///
     /// This function is meant to be used directly in the [`CollectionActorHandle`].
     async fn start(&mut self) -> Result<MsgResponseType> {
-        // TODO: set up buffer
-        // TODO: maybe set up link to web server
-        // TODO: maybe set up a web server here!
-        tracing::debug!("CollectionActor is started.");
+        tracing::debug!("CollectionActor is starting...");
 
-        self.run().await?;
+        // build our application with a route
+        let app = Router::new()
+            .route("/", get(root))
+            .route("/desc", get(get_desc))
+            .route("/tail/:n", get(get_tail));
+
+        // run our app with hyper
+        let listener = tokio::net::TcpListener::bind(WEB_SERVER_ADDRESS).await?;
+        tracing::info!("listening on {}", listener.local_addr()?);
+        axum::serve(listener, app).await?; // THIS NEVER RESOLVES, NATURALLY
+
+        tracing::debug!("CollectionActor is started."); // DOESN'T RUN
+
+        self.run().await?; // DOESN'T RUN
 
         Ok(())
     }
@@ -682,7 +739,7 @@ impl Actor<MsgResponseType> for CollectionActor {
     ///
     /// This function is meant to be used indirectly - only through the [`CollectionActor::start`] function
     async fn run(&mut self) -> Result<MsgResponseType> {
-        tracing::debug!("CollectionActor is running.");
+        tracing::debug!("CollectionActor is running."); // DOESN'T RUN
 
         while let Some(msg) = self.receiver.recv().await {
             self.handle(msg).await?;
@@ -695,39 +752,42 @@ impl Actor<MsgResponseType> for CollectionActor {
     ///
     /// This function is meant to be called in the [`CollectionActor`]'s destructor.
     fn stop(&mut self) {
-        // TODO
-
-        tracing::debug!("CollectionActor is flushed and properly stopped.");
+        tracing::debug!("CollectionActor is stopped."); // RUNS IN THE END
     }
 
     /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`CollectionActor`] actor
     ///
-    /// Writes data to buffer and measures & prints the iteration's execution time.
+    /// Writes data to a buffer and measures & prints the iteration's execution time.
+    ///
+    /// It collects chunks from Processing [`UniversalActor`]s, assembles them in batches,
+    /// and then stores the batches in the buffer.
     async fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> Result<MsgResponseType> {
-        // TODO
-
         let from = msg.from;
         let rows = msg.rows;
         let start = msg.start;
 
-        // if let Some(file) = &mut self.writer {
-        //     for row in rows {
-        //         let _ = writeln!(
-        //             file,
-        //             "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-        //             from,
-        //             row.symbol,
-        //             row.last_price,
-        //             row.pct_change,
-        //             row.period_min,
-        //             row.period_max,
-        //             row.sma,
-        //         );
-        //     }
+        tracing::error!("TEST!!!"); // DOESN'T RUN
+
+        // let mut chunk = Vec::new();
+
+        // for row in rows {
+        // let _ = writeln!(
+        //     file,
+        //     "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+        //     from,
+        //     row.symbol,
+        //     row.last_price,
+        //     row.pct_change,
+        //     row.period_min,
+        //     row.period_max,
+        //     row.sma,
+        // );
+
+        // self.buffer.push_back()
+        // }
         //
         //     file.flush()
         //         .context("Failed to flush to file. Data loss :/")?;
-        // }
 
         tracing::info!("Took {:.3?} to complete.", start.elapsed());
         #[cfg(debug_assertions)]

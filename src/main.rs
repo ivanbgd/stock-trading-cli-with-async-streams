@@ -1,12 +1,13 @@
 use anyhow::Result;
-use axum::Router;
-use axum::routing::get;
+// use axum::Router;
+// use axum::routing::get;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use stock::cli::Args;
-use stock::constants::{SHUTDOWN_INTERVAL_SECS, WEB_SERVER_ADDRESS};
-use stock::handlers::{get_desc, get_tail, root};
+use stock::constants::SHUTDOWN_INTERVAL_SECS;
+// use stock::constants::{SHUTDOWN_INTERVAL_SECS, WEB_SERVER_ADDRESS};
+// use stock::handlers::{get_desc, get_tail, root};
 use stock::logic::main_loop;
 use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
@@ -28,17 +29,6 @@ async fn main() -> Result<MsgResponseType> {
 
     // spawn application as a separate task
     tokio::spawn(async move { main_loop(args).await });
-
-    // build our application with a route
-    let app = Router::new()
-        .route("/", get(root))
-        .route("/desc", get(get_desc))
-        .route("/tail/:n", get(get_tail));
-
-    // run our app with hyper
-    let listener = tokio::net::TcpListener::bind(WEB_SERVER_ADDRESS).await?;
-    tracing::info!("listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await?;
 
     // // This doesn't fully support a graceful shutdown.
     // // This works with any async executor.

@@ -29,7 +29,9 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 use crate::cli::{Args, ImplementationVariant};
 use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
+use crate::my_async_actors::{
+    ActorHandle, ActorMessage, CollectionActorHandle, UniversalActorHandle, WriterActorHandle,
+};
 // use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::types::MsgResponseType;
 
@@ -70,6 +72,14 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
 
     // Use with my Actor implementation
     let writer_handle = WriterActorHandle::new();
+    let collection_handle = CollectionActorHandle::new();
+    // let collection_handle = tokio::spawn(async move { CollectionActorHandle::new() });
+    // let collection_handle = collection_handle.await.unwrap();
+    // let collection_handle = std::thread::spawn(move || CollectionActorHandle::new())
+    //     .join()
+    //     .unwrap();
+    // let collection_handle =
+    //     tokio::task::spawn_blocking(move || CollectionActorHandle::new()).await?;
 
     // // Use with Actix Actor implementation
     // // We need to ensure that we have one and only one `WriterActor` - a Singleton.
@@ -136,6 +146,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
                     from,
                     to,
                     writer_handle: writer_handle.clone(),
+                    collection_handle: collection_handle.clone(),
                     start,
                 })
                 .await;
@@ -154,6 +165,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         //                 from,
         //                 to,
         //                 writer_handle: writer_handle.clone(),
+        //                 collection_handle: collection_handle.clone(),
         //                 start,
         //             })
         //             .await
