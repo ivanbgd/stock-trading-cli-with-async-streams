@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use clap::{Parser, ValueEnum};
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Clone, Debug)]
 #[command(name = "Stock-Tracking CLI with Async Streams")]
 #[command(author, version, about, long_about = None)]
 pub struct Args {

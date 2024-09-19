@@ -1,13 +1,15 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::Router;
 use axum::routing::get;
 use clap::Parser;
+use time::format_description::well_known::Rfc3339;
 use tracing_subscriber::EnvFilter;
 
 use stock::cli::Args;
 use stock::constants::{SHUTDOWN_INTERVAL_SECS, WEB_SERVER_ADDRESS};
-use stock::handlers::{get_desc, get_tail, root};
+use stock::handlers::{get_desc, get_tail, root, WebAppState};
 use stock::logic::main_loop;
+use stock::my_async_actors::{ActorHandle, CollectionActorHandle};
 use stock::types::MsgResponseType;
 use stock_trading_cli_with_async_streams as stock;
 
@@ -15,6 +17,14 @@ use stock_trading_cli_with_async_streams as stock;
 #[tokio::main]
 async fn main() -> Result<MsgResponseType> {
     let args = Args::parse();
+
+    // parse early so that neither main loop nor web server start if
+    // date and time are not in the correct format
+    let _ = time::OffsetDateTime::parse(&args.from, &Rfc3339)
+        .context("The provided date or time format isn't correct.")?;
+    // needed for web server's state, so we don't have to pass it
+    // in tail response messages to the web server
+    let from = args.clone().from;
 
     // initialize tracing
     tracing_subscriber::fmt()
@@ -26,19 +36,26 @@ async fn main() -> Result<MsgResponseType> {
     // This supports a fully-graceful shutdown, meaning all symbols will be fetched and processed
     // when a CTRL+C signal arrives.
 
-    // spawn application as a separate task
+    // spawn the main processing loop as a separate task
     tokio::spawn(async move { main_loop(args).await });
 
-    // build our application with a route
+    /*
+    // build our web application with a state and with a route
+    let state = WebAppState {
+        from,
+        collection_handle,
+    };
     let app = Router::new()
         .route("/", get(root))
         .route("/desc", get(get_desc))
-        .route("/tail/:n", get(get_tail));
+        .route("/tail/:n", get(get_tail))
+        .with_state(state);
 
-    // run our app with hyper
+    // run our web app with hyper
     let listener = tokio::net::TcpListener::bind(WEB_SERVER_ADDRESS).await?;
     tracing::info!("listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
+    */
 
     // // This doesn't fully support a graceful shutdown.
     // // This works with any async executor.

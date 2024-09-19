@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
@@ -12,12 +12,16 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
-use crate::constants::{ACTOR_CHANNEL_CAPACITY, CSV_FILE_PATH, CSV_HEADER, WINDOW_SIZE};
-use crate::types::{MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType};
+use crate::constants::{
+    ACTOR_CHANNEL_CAPACITY, CSV_FILE_PATH, CSV_HEADER, TAIL_BUFFER_SIZE, WINDOW_SIZE,
+};
+use crate::types::{
+    CollectionMsgErrorType, MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType,
+};
 
 // ============================================================================
 //
@@ -117,7 +121,7 @@ trait Actor<R> {
 /// The type [`R`] represents a response message type.
 ///
 /// The type [`E`] represents an error type.
-pub(crate) trait ActorHandle<R, E> {
+pub trait ActorHandle<R, E> {
     /// The type [`Self::Msg`] represents an incoming message type.
     type Msg;
 
@@ -132,7 +136,8 @@ pub(crate) trait ActorHandle<R, E> {
     fn new() -> Self;
 
     /// Send a message to an [`Actor`] instance through the [`ActorHandle`]
-    async fn send(&self, msg: Self::Msg) -> Result<R, E>;
+    // async fn send(&self, msg: Self::Msg) -> Result<R, E>;
+    fn send(&self, msg: Self::Msg) -> impl std::future::Future<Output = Result<R, E>> + Send;
 }
 
 // ============================================================================
@@ -150,8 +155,8 @@ pub(crate) trait ActorHandle<R, E> {
 /// The [`ActorMessage`] enumeration
 ///
 /// Supports two message types:
-/// - QuoteRequestsMsg,
-/// - SymbolsClosesMsg,
+/// - [`QuoteRequestsMsg`],
+/// - [`SymbolsClosesMsg`],
 ///
 /// There is no expected response for any of the message types.
 ///
@@ -164,12 +169,14 @@ pub enum ActorMessage {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     },
     SymbolsClosesMsg {
         symbols_closes: HashMap<String, Vec<f64>>,
         from: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     },
 }
@@ -212,19 +219,35 @@ impl Actor<MsgResponseType> for UniversalActor {
                 from,
                 to,
                 writer_handle,
+                collection_handle,
                 start,
             } => {
-                Self::handle_quote_requests_msg(symbols, from, to, writer_handle, start)
-                    .await
-                    .expect("Expected some result from `handle_quote_requests_msg()`");
+                Self::handle_quote_requests_msg(
+                    symbols,
+                    from,
+                    to,
+                    writer_handle,
+                    collection_handle,
+                    start,
+                )
+                .await
+                .expect("Expected some result from `handle_quote_requests_msg()`");
             }
             ActorMessage::SymbolsClosesMsg {
                 symbols_closes,
                 from,
                 writer_handle,
+                collection_handle,
                 start,
             } => {
-                Self::handle_symbols_closes_msg(symbols_closes, from, writer_handle, start).await;
+                Self::handle_symbols_closes_msg(
+                    symbols_closes,
+                    from,
+                    writer_handle,
+                    collection_handle,
+                    start,
+                )
+                .await;
             }
         }
 
@@ -251,6 +274,7 @@ impl UniversalActor {
         from: OffsetDateTime,
         to: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     ) -> Result<MsgResponseType> {
         let provider = yahoo::YahooConnector::new().context(format!("Skipping: {:?}", symbols))?;
@@ -278,6 +302,7 @@ impl UniversalActor {
             symbols_closes,
             from,
             writer_handle,
+            collection_handle,
             start,
         };
 
@@ -299,6 +324,7 @@ impl UniversalActor {
         symbols_closes: HashMap<String, Vec<f64>>,
         from: OffsetDateTime,
         writer_handle: WriterActorHandle,
+        collection_handle: CollectionActorHandle,
         start: Instant,
     ) -> MsgResponseType {
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
@@ -352,13 +378,28 @@ impl UniversalActor {
             }
         }
 
+        // Assemble a message for the single writer actor.
         let perf_ind_msg = PerformanceIndicatorsRowsMsg { from, rows, start };
 
         // Send the message to the single writer actor.
         writer_handle
-            .send(perf_ind_msg)
+            .send(perf_ind_msg.clone())
             .await
             .expect("Couldn't send a message to the WriterActor.");
+
+        // Assemble a message for the single collection actor.
+        let coll_msg = CollectionActorMsg::PerformanceIndicatorsChunk(perf_ind_msg);
+        // let coll_msg = CollectionActorMsg::PerformanceIndicatorsChunk {
+        //     from: perf_ind_msg.from,
+        //     rows: perf_ind_msg.rows,
+        //     start,
+        // };
+
+        // Send the message to the single collection actor.
+        collection_handle
+            .send(coll_msg)
+            .await
+            .expect("Couldn't send a message to the CollectionActor.");
     }
 
     /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
@@ -453,7 +494,8 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
 // ============================================================================
 
 /// A single row of calculated performance indicators for a symbol
-struct PerformanceIndicatorsRow {
+#[derive(Clone, Debug)]
+pub struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
     pub pct_change: f64,
@@ -465,12 +507,13 @@ struct PerformanceIndicatorsRow {
 /// The [`PerformanceIndicatorsRowsMsg`] message
 ///
 /// It contains a `from` date and time field,
-/// and calculated performance indicators for a chunk of symbols.
+/// and calculated performance indicators for a **chunk** of symbols.
 ///
 /// There is no expected response.
 ///
 /// We could have an oneshot channel for sending the response back in general case.
 /// We simply don't need it in our specific (custom) case.
+#[derive(Clone)]
 pub struct PerformanceIndicatorsRowsMsg {
     from: String,
     rows: Vec<PerformanceIndicatorsRow>,
@@ -510,7 +553,7 @@ impl Actor<MsgResponseType> for WriterActor {
         let mut file = File::create(&self.file_name)
             .unwrap_or_else(|_| panic!("Could not open target file \"{}\".", self.file_name));
         #[cfg(debug_assertions)]
-        tracing::debug!("The output file name is \"{}\".", self.file_name);
+        tracing::debug!("The output file path is \"{}\".", self.file_name);
         let _ = writeln!(&mut file, "{}", CSV_HEADER);
         self.writer = Some(BufWriter::new(file));
         tracing::debug!("WriterActor is started.");
@@ -640,13 +683,66 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
 //
 //
 //
-//             [`CollectionActor`], [`CollectionActorHandle`]
+//    [`CollectionActorMsg`], [`CollectionActor`], [`CollectionActorHandle`],
+//                        [`Batch`], [`TailResponse`]
 //
 //
 //
 //
 // ============================================================================
 
+/// The [`CollectionActorMsg`] enumeration
+///
+/// Supports two message types:
+/// - [`TailRequest`],
+/// - [`PerformanceIndicatorsChunk`],
+///
+/// There is no expected response for any of the message types.
+///
+/// We could have an oneshot channel for sending the response back in general case.
+/// It could be used for every message type.
+/// We simply don't need it in our specific (custom) case.
+pub enum CollectionActorMsg {
+    /// Wraps a [`PerformanceIndicatorsRowsMsg`] message
+    PerformanceIndicatorsChunk(PerformanceIndicatorsRowsMsg),
+    /// A request for the last `n` batches of processed data from web server
+    TailRequest {
+        web_server: oneshot::Receiver<TailResponse>,
+        n: usize,
+    },
+    // PerformanceIndicatorsChunk {
+    //     from: String,
+    //     rows: Vec<PerformanceIndicatorsRow>,
+    //     start: Instant,
+    // },
+    // PerformanceIndicatorsRow {
+    //     symbol: String,
+    //     last_price: f64,
+    //     pct_change: f64,
+    //     period_min: f64,
+    //     period_max: f64,
+    //     sma: f64,
+    // },
+}
+
+/// A single iteration of the main loop, which contains processed data
+/// for all S&P 500 symbols
+// #[derive(Debug)]
+type Batch = Vec<PerformanceIndicatorsRow>;
+// struct Batch {
+//     rows: Vec<PerformanceIndicatorsRow>,
+// }
+
+// TODO: update docstring
+/// A response for the web server which contains the requested last `n`
+/// batches of processed symbol data
+// #[derive(Debug)]
+type TailResponse = Vec<Batch>;
+// pub struct TailResponse {
+//     batches: Vec<Batch>,
+// }
+
+// TODO: update docstring
 /// Actor for collecting calculated performance indicators for fetched stock data into a buffer
 ///
 /// It is used for storing the performance data in a buffer of capacity `N`,
@@ -658,24 +754,31 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
 ///
 /// It can only be created through [`CollectionActorHandle`], which is public.
 struct CollectionActor {
-    receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>,
+    receiver: mpsc::Receiver<CollectionActorMsg>,
+    buffer: VecDeque<Batch>,
 }
 
 impl Actor<MsgResponseType> for CollectionActor {
-    type Msg = PerformanceIndicatorsRowsMsg;
+    type Msg = CollectionActorMsg;
 
     /// Create a new [`CollectionActor`]
-    fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
-        Self { receiver }
+    fn new(receiver: mpsc::Receiver<CollectionActorMsg>) -> Self {
+        Self {
+            receiver,
+            buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE),
+        }
     }
 
     /// Start the [`CollectionActor`]
     ///
     /// This function is meant to be used directly in the [`CollectionActorHandle`].
     async fn start(&mut self) -> Result<MsgResponseType> {
+        #[cfg(debug_assertions)]
+        tracing::debug!("CollectionActor is starting...");
+
         // TODO: set up buffer
         // TODO: maybe set up link to web server
-        // TODO: maybe set up a web server here!
+
         tracing::debug!("CollectionActor is started.");
 
         self.run().await?;
@@ -700,44 +803,58 @@ impl Actor<MsgResponseType> for CollectionActor {
     ///
     /// This function is meant to be called in the [`CollectionActor`]'s destructor.
     fn stop(&mut self) {
-        // TODO
-
-        tracing::debug!("CollectionActor is flushed and properly stopped.");
+        tracing::debug!("CollectionActor is stopped.");
     }
 
-    /// The [`PerformanceIndicatorsRowsMsg`] message handler for the [`CollectionActor`] actor
+    /// The [`CollectionActorMsg`] message handler for the [`CollectionActor`] actor
     ///
-    /// Writes data to buffer and measures & prints the iteration's execution time.
-    async fn handle(&mut self, msg: PerformanceIndicatorsRowsMsg) -> Result<MsgResponseType> {
-        // TODO
+    /// It collects chunks from Processing [`UniversalActor`]s, assembles them in batches,
+    /// and then stores the batches in the buffer.
+    ///
+    /// It also receives requests from web server for the last n batches of
+    /// processed data.
+    async fn handle(&mut self, msg: CollectionActorMsg) -> Result<MsgResponseType> {
+        match msg {
+            CollectionActorMsg::PerformanceIndicatorsChunk(msg) => {
+                Self::handle_perf_ind_chunk(self, msg)
+                    .await
+                    .expect("Expected some result from `handle_perf_ind_chunk()`");
+            }
+            CollectionActorMsg::TailRequest { web_server, n } => {
+                Self::handle_tail_request(web_server, n).await?;
+            }
+        }
 
-        let from = msg.from;
+        Ok(())
+    }
+}
+
+impl CollectionActor {
+    /// Handle a [`CollectionActorMsg::PerformanceIndicatorsChunk`] message,
+    /// which wraps a [`PerformanceIndicatorsRowsMsg`] message
+    ///
+    /// Assembles chunks into complete batches and stores them in buffer.
+    ///
+    /// This message comes from a processing actor.
+    async fn handle_perf_ind_chunk(
+        &mut self,
+        msg: PerformanceIndicatorsRowsMsg,
+    ) -> Result<MsgResponseType> {
         let rows = msg.rows;
-        let start = msg.start;
+        // let start = msg.start;
 
-        // if let Some(file) = &mut self.writer {
-        //     for row in rows {
-        //         let _ = writeln!(
-        //             file,
-        //             "{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
-        //             from,
-        //             row.symbol,
-        //             row.last_price,
-        //             row.pct_change,
-        //             row.period_min,
-        //             row.period_max,
-        //             row.sma,
-        //         );
-        //     }
-        //
-        //     file.flush()
-        //         .context("Failed to flush to file. Data loss :/")?;
-        // }
+        self.buffer.push_back(vec![]);
 
-        tracing::info!("Took {:.3?} to complete.", start.elapsed());
-        #[cfg(debug_assertions)]
-        println!("Took {:.3?} to complete.\n", start.elapsed());
+        Ok(())
+    }
 
+    /// Handle a [`CollectionActorMsg::TailRequest`]
+    ///
+    /// This message comes from web server.
+    async fn handle_tail_request(
+        web_server: oneshot::Receiver<TailResponse>,
+        n: usize,
+    ) -> Result<MsgResponseType> {
         Ok(())
     }
 }
@@ -755,7 +872,7 @@ impl Drop for CollectionActor {
 /// We can only create [`CollectionActor`]s through the [`CollectionActorHandle`].
 ///
 /// It contains the `sender` field, which represents
-/// a sender of the [`PerformanceIndicatorsRowsMsg`] in an MPSC channel.
+/// a sender of the [`CollectionActorMsg`] in an MPSC channel.
 ///
 /// The handle is the sender, and the actor is the receiver
 /// of a message in the channel.
@@ -763,11 +880,11 @@ impl Drop for CollectionActor {
 /// We only create a single [`CollectionActor`] instance in a [`CollectionActorHandle`].
 #[derive(Clone)]
 pub struct CollectionActorHandle {
-    sender: mpsc::Sender<PerformanceIndicatorsRowsMsg>,
+    sender: mpsc::Sender<CollectionActorMsg>,
 }
 
-impl ActorHandle<MsgResponseType, WriterMsgErrorType> for CollectionActorHandle {
-    type Msg = PerformanceIndicatorsRowsMsg;
+impl ActorHandle<MsgResponseType, CollectionMsgErrorType> for CollectionActorHandle {
+    type Msg = CollectionActorMsg;
 
     /// Create a new [`CollectionActorHandle`]
     ///
@@ -790,8 +907,8 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for CollectionActorHandle 
     /// Send a message to an [`CollectionActor`] instance through the [`CollectionActorHandle`]
     async fn send(
         &self,
-        msg: PerformanceIndicatorsRowsMsg,
-    ) -> Result<MsgResponseType, WriterMsgErrorType> {
+        msg: CollectionActorMsg,
+    ) -> Result<MsgResponseType, CollectionMsgErrorType> {
         self.sender.send(msg).await
     }
 }

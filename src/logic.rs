@@ -22,14 +22,19 @@ use std::time::{Duration, Instant};
 
 use actix::Actor;
 use anyhow::{Context, Result};
+use axum::Router;
+use axum::routing::get;
 use clap::Parser;
 use rayon::prelude::*;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 use crate::cli::{Args, ImplementationVariant};
-use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS};
-use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
+use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS, WEB_SERVER_ADDRESS};
+use crate::handlers::{get_desc, get_tail, root, WebAppState};
+use crate::my_async_actors::{
+    ActorHandle, ActorMessage, CollectionActorHandle, UniversalActorHandle, WriterActorHandle,
+};
 // use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::types::MsgResponseType;
 
@@ -47,8 +52,10 @@ use crate::types::MsgResponseType;
 ///
 /// # Errors
 /// - [time::error::Parse](https://docs.rs/time/0.3.36/time/error/enum.Parse.html)
-pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
-    // let args = Args::parse();
+pub async fn main_loop(
+    args: Args,
+    // collection_handle: &CollectionActorHandle,
+) -> Result<MsgResponseType> {
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .context("The provided date or time format isn't correct.")?;
     let variant = args.variant;
@@ -70,6 +77,27 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
 
     // Use with my Actor implementation
     let writer_handle = WriterActorHandle::new();
+    let collection_handle = CollectionActorHandle::new();
+
+    ///////////////////////////////////////////////////////////////
+
+    // build our web application with a state and with a route
+    let state = WebAppState {
+        from: args.from,
+        collection_handle: collection_handle.clone(),
+    };
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/desc", get(get_desc))
+        .route("/tail/:n", get(get_tail))
+        .with_state(state);
+
+    // run our web app with hyper
+    let listener = tokio::net::TcpListener::bind(WEB_SERVER_ADDRESS).await?;
+    tracing::info!("listening on {}", listener.local_addr()?);
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    ///////////////////////////////////////////////////////////////
 
     // // Use with Actix Actor implementation
     // // We need to ensure that we have one and only one `WriterActor` - a Singleton.
@@ -136,6 +164,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
                     from,
                     to,
                     writer_handle: writer_handle.clone(),
+                    collection_handle: collection_handle.clone(),
                     start,
                 })
                 .await;
@@ -154,6 +183,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         //                 from,
         //                 to,
         //                 writer_handle: writer_handle.clone(),
+        //                 collection_handle: collection_handle.clone(),
         //                 start,
         //             })
         //             .await
