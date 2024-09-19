@@ -121,7 +121,7 @@ trait Actor<R> {
 /// The type [`R`] represents a response message type.
 ///
 /// The type [`E`] represents an error type.
-pub trait ActorHandle<R, E> {
+pub(crate) trait ActorHandle<R, E> {
     /// The type [`Self::Msg`] represents an incoming message type.
     type Msg;
 
@@ -136,8 +136,7 @@ pub trait ActorHandle<R, E> {
     fn new() -> Self;
 
     /// Send a message to an [`Actor`] instance through the [`ActorHandle`]
-    // async fn send(&self, msg: Self::Msg) -> Result<R, E>;
-    fn send(&self, msg: Self::Msg) -> impl std::future::Future<Output = Result<R, E>> + Send;
+    async fn send(&self, msg: Self::Msg) -> Result<R, E>;
 }
 
 // ============================================================================

@@ -40,22 +40,23 @@ use crate::types::MsgResponseType;
 
 /// **The main loop**
 ///
-/// Implemented by using classical multithreading for concurrency.
+/// This function does most of the work in our application.
 ///
-/// Runs multiple instances of the same task concurrently.
+/// It spawns a web application, and starts the main processing loop,
+/// which fetches and processes symbol data, and also writes the
+/// calculated performance indicators in a file, and additionally stores
+/// the data in memory so that the web app can fetch it when a user
+/// requires it.
 ///
-/// To be more precise, this is a parallel implementation.
+/// This function supports several implementations. All but the currently
+/// chosen one are commented-out in code.
 ///
-/// Async code is used for intervals.
-///
-/// Async code is also used for fetching and processing of data.
+/// Most implementations use the Actor model, and the main implementation
+/// is based on it.
 ///
 /// # Errors
 /// - [time::error::Parse](https://docs.rs/time/0.3.36/time/error/enum.Parse.html)
-pub async fn main_loop(
-    args: Args,
-    // collection_handle: &CollectionActorHandle,
-) -> Result<MsgResponseType> {
+pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
     let from = OffsetDateTime::parse(&args.from, &Rfc3339)
         .context("The provided date or time format isn't correct.")?;
     let variant = args.variant;
@@ -79,7 +80,21 @@ pub async fn main_loop(
     let writer_handle = WriterActorHandle::new();
     let collection_handle = CollectionActorHandle::new();
 
-    ///////////////////////////////////////////////////////////////
+    // // Use with Actix Actor implementation
+    // // We need to ensure that we have one and only one `WriterActor` - a Singleton.
+    // // This is because it writes to a file, and writing to a shared object,
+    // // such as a file, needs to be synchronized, i.e., sequential.
+    // // We generally don't use low-level synchronization primitives such as
+    // // locks, mutexes, and similar when working with Actors.
+    // // Actors have mailboxes and process messages that they receive one at a time,
+    // // i.e., sequentially, and hence we can accomplish synchronization implicitly
+    // // by using a single writer actor.
+    // let writer_address = WriterActor::new().start();
+
+    // // Use with async without Actors
+    // let mut writer = start_writer()?;
+
+    tracing::debug!("starting the web application");
 
     // build our web application with a state and with a route
     let state = WebAppState {
@@ -96,22 +111,7 @@ pub async fn main_loop(
     let listener = tokio::net::TcpListener::bind(WEB_SERVER_ADDRESS).await?;
     tracing::info!("listening on {}", listener.local_addr()?);
     tokio::spawn(async move { axum::serve(listener, app).await });
-
-    ///////////////////////////////////////////////////////////////
-
-    // // Use with Actix Actor implementation
-    // // We need to ensure that we have one and only one `WriterActor` - a Singleton.
-    // // This is because it writes to a file, and writing to a shared object,
-    // // such as a file, needs to be synchronized, i.e., sequential.
-    // // We generally don't use low-level synchronization primitives such as
-    // // locks, mutexes, and similar when working with Actors.
-    // // Actors have mailboxes and process messages that they receive one at a time,
-    // // i.e., sequentially, and hence we can accomplish synchronization implicitly
-    // // by using a single writer actor.
-    // let writer_address = WriterActor::new().start();
-
-    // // Use with async without Actors
-    // let mut writer = start_writer()?;
+    tracing::debug!("started the web application");
 
     tracing::debug!("starting the main loop");
 

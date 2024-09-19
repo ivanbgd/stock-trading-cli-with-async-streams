@@ -9,20 +9,14 @@ use serde::Serialize;
 use crate::constants::TAIL_BUFFER_SIZE;
 use crate::my_async_actors::CollectionActorHandle;
 
+/// Our web app's state for keeping some variables
 #[derive(Clone)]
 pub struct WebAppState {
+    /// The CLI argument `from`, so we don't have to pass it in tail response messages to the web app
     pub from: String,
+    /// The single collection actor instance
     pub collection_handle: CollectionActorHandle,
 }
-
-// impl WebAppState {
-//     pub fn new(from: String) -> Self {
-//         Self {
-//             from,
-//             collection_handle: CollectionActorHandle::new(),
-//         }
-//     }
-// }
 
 /// List of last `n` batches, where each batch contains processed data for all S&P 500 symbols.
 /// The batches are created at regular time intervals.
