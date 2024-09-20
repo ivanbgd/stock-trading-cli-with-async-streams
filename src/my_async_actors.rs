@@ -834,7 +834,6 @@ impl CollectionActor {
         self.chunk_cnt += 1;
         self.batch.extend(rows);
 
-        // TODO: cloning is not efficient; we could use a flag to mark it when the batch is ready for reading (when it's fully-assembled)
         if self.chunk_cnt == self.num_chunks {
             self.buffer.push_front(self.batch.clone());
             self.buffer.truncate(TAIL_BUFFER_SIZE);
