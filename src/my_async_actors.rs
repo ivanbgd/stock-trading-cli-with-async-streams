@@ -233,7 +233,7 @@ impl Actor<MsgResponseType> for UniversalActor {
                     start,
                 )
                 .await
-                .expect("Expected some result from `handle_quote_requests_msg()`");
+                .context("Expected some result from `handle_quote_requests_msg()`")?;
             }
             ActorMessage::SymbolsClosesMsg {
                 symbols_closes,
@@ -249,7 +249,8 @@ impl Actor<MsgResponseType> for UniversalActor {
                     collection_handle,
                     start,
                 )
-                .await;
+                .await
+                .context("Expected some result from `handle_symbols_closes_msg()`")?;
             }
         }
 
@@ -328,7 +329,7 @@ impl UniversalActor {
         writer_handle: WriterActorHandle,
         collection_handle: CollectionActorHandle,
         start: Instant,
-    ) -> MsgResponseType {
+    ) -> Result<MsgResponseType> {
         let from = OffsetDateTime::format(from, &Rfc3339).expect("Couldn't format 'from'.");
 
         let mut rows: Vec<PerformanceIndicatorsRow> = Vec::with_capacity(symbols_closes.len());
@@ -387,7 +388,7 @@ impl UniversalActor {
         writer_handle
             .send(perf_ind_msg.clone())
             .await
-            .expect("Couldn't send a message to the WriterActor.");
+            .context("Couldn't send a message to the WriterActor.")?;
 
         // Assemble a message for the single collection actor.
         let coll_msg = CollectionActorMsg::PerformanceIndicatorsChunk(perf_ind_msg);
@@ -396,7 +397,9 @@ impl UniversalActor {
         collection_handle
             .send(coll_msg)
             .await
-            .expect("Couldn't send a message to the CollectionActor.");
+            .context("Couldn't send a message to the CollectionActor.")?;
+
+        Ok(())
     }
 
     /// Retrieve data for a single `symbol` from a data source (`provider`) and extract the closing prices
@@ -821,6 +824,10 @@ impl CollectionActor {
     /// It can only be fully-read, when it's ready.
     /// Synchronization in the Actor model is accomplished via message passing.
     ///
+    /// Takes care of keeping only the fresh data in the buffer, so that its
+    /// size doesn't ever grow, which prevents memory leaks.
+    /// Old data are removed from the buffer to make room for new data.
+    ///
     /// The *from* field is discarded.
     ///
     /// This message comes from a processing actor.
@@ -844,12 +851,11 @@ impl CollectionActor {
 
     /// Handle a [`CollectionActorMsg::TailRequest`]
     ///
-    /// Gets the last fully-assembled `n` batches of performance indicators,
+    /// Gets the last fully-assembled `n` batches of performance indicators
     /// and sends them to the web server.
     ///
-    /// Takes care of keeping only the fresh data in the buffer, so that its
-    /// size doesn't ever grow, which prevents memory leaks.
-    /// Old data are removed from the buffer to make room for new data.
+    /// This message is basically a command - a request for the newest `n`
+    /// batches.
     ///
     /// This message comes from the web server.
     async fn handle_tail_request(
@@ -858,18 +864,10 @@ impl CollectionActor {
         n: usize,
     ) -> Result<MsgResponseType> {
         let response = self.buffer.iter().take(n).cloned().collect();
-        sender.send(response).await.unwrap();
-
-        // let response = &self.buffer[..n];
-        // let response = &self.buffer;
-        // sender
-        //     .send(<TailResponse>::try_from(response).unwrap())
-        //     .await
-        //     .unwrap();
-        // .context("Failed to send response")?;
-
-        // sender.send(*response).await.unwrap();
-        // .context("Failed to send response")?;
+        sender
+            .send(response)
+            .await
+            .context("Failed to send a response to the web application.")?;
 
         Ok(())
     }

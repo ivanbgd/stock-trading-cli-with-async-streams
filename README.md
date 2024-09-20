@@ -458,6 +458,10 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-01-01T1
 
 ## Potential Modifications, Improvements or Additions
 
+- Integrate our **web application** with Actix actors, and with the no-actors variant.
+- Try to use stack memory in `CollectionActor` instead of heap memory for the two buffers.
+    - Stack is LIFO, while `VecDeque` that we currently use is FIFO, and we make use of that,
+      so we'd have to maintain some pointers in the logic for always keeping its size under the limit.
 - Find ways to **publish and subscribe** to messages without explicit calls.
     - [actix](https://crates.io/crates/actix) might support this feature through the use
       of [Recipient](https://docs.rs/actix/latest/actix/struct.Recipient.html);
@@ -483,6 +487,5 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-01-01T1
 - Our blocking [std::fs::File](https://doc.rust-lang.org/std/fs/struct.File.html) implementation works well,
   but consider trying out [tokio::fs::File](https://docs.rs/tokio/latest/tokio/fs/struct.File.html)
   and/or [async_std::fs::File](https://docs.rs/async-std/latest/async_std/fs/struct.File.html) as well.
-- Integrate our web application with Actix actors, and with the no-actors variant.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.
