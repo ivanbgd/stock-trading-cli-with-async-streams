@@ -391,11 +391,6 @@ impl UniversalActor {
 
         // Assemble a message for the single collection actor.
         let coll_msg = CollectionActorMsg::PerformanceIndicatorsChunk(perf_ind_msg);
-        // let coll_msg = CollectionActorMsg::PerformanceIndicatorsChunk {
-        //     from: perf_ind_msg.from,
-        //     rows: perf_ind_msg.rows,
-        //     start,
-        // };
 
         // Send the message to the single collection actor.
         collection_handle

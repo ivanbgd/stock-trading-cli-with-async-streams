@@ -12,6 +12,8 @@ use crate::my_async_actors::{ActorHandle, CollectionActorHandle, CollectionActor
 use crate::types::{TailResponse, TailResponseString};
 
 /// Our web app's state for keeping some variables
+///
+/// It must be [`Clone`], which means we can't store a `!Clone` channel receiver in it.
 #[derive(Clone)]
 pub struct WebAppState {
     /// The CLI argument `from`, so we don't have to pass it in tail response messages to the web app

@@ -400,7 +400,7 @@ period start,symbol,price,change %,min,max,30d avg
 Took 278.264ms to complete.
 ```
 
-New symbols (tickers) added in 2024:
+Only new symbols (tickers), added in 2024:
 
 ```shell
 $ cargo run -- --from 2024-01-01T12:00:09+00:00 --symbols KKR,CRWD,GDDY,VST,GEV,SOLV,SMCI,DECK
