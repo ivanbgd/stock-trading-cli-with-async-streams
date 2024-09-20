@@ -19,7 +19,7 @@ use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
 use crate::constants::{
-    ACTOR_CHANNEL_CAPACITY, CSV_FILE_PATH, CSV_HEADER, TAIL_BUFFER_SIZE, WINDOW_SIZE,
+    ACTOR_CHANNEL_CAPACITY, CHUNK_SIZE, CSV_FILE_PATH, CSV_HEADER, TAIL_BUFFER_SIZE, WINDOW_SIZE,
 };
 use crate::types::{
     Batch, CollectionMsgErrorType, MsgResponseType, TailResponse, UniversalMsgErrorType,
@@ -85,7 +85,7 @@ trait Actor<R> {
     type Msg;
 
     /// Create a new [`Actor`]
-    fn new(receiver: mpsc::Receiver<Self::Msg>) -> Self;
+    fn new(receiver: mpsc::Receiver<Self::Msg>, nticks: usize) -> Self;
 
     /// Start the [`Actor`]
     async fn start(&mut self) -> Result<MsgResponseType> {
@@ -136,7 +136,7 @@ pub(crate) trait ActorHandle<R, E> {
     /// # Panics
     ///
     /// Panics if it can't run the actor.
-    fn new() -> Self;
+    fn new(nticks: usize) -> Self;
 
     /// Send a message to an [`Actor`] instance through the [`ActorHandle`]
     async fn send(&self, msg: Self::Msg) -> Result<R, E>;
@@ -198,7 +198,7 @@ impl Actor<MsgResponseType> for UniversalActor {
     type Msg = ActorMessage;
 
     /// Create a new [`UniversalActor`]
-    fn new(receiver: mpsc::Receiver<ActorMessage>) -> Self {
+    fn new(receiver: mpsc::Receiver<ActorMessage>, _: usize) -> Self {
         Self { receiver }
     }
 
@@ -309,7 +309,7 @@ impl UniversalActor {
         };
 
         // Spawn another Actor and send it the message.
-        let actor_handle = UniversalActorHandle::new();
+        let actor_handle = UniversalActorHandle::new(0);
         actor_handle
             .send(symbols_closes_msg)
             .await
@@ -464,9 +464,9 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
     /// # Panics
     ///
     /// Panics if it can't run the actor.
-    fn new() -> Self {
+    fn new(nticks: usize) -> Self {
         let (sender, receiver) = mpsc::channel(ACTOR_CHANNEL_CAPACITY);
-        let mut actor = UniversalActor::new(receiver);
+        let mut actor = UniversalActor::new(receiver, nticks);
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -547,7 +547,7 @@ impl Actor<MsgResponseType> for WriterActor {
     type Msg = PerformanceIndicatorsRowsMsg;
 
     /// Create a new [`WriterActor`]
-    fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>) -> Self {
+    fn new(receiver: mpsc::Receiver<PerformanceIndicatorsRowsMsg>, _: usize) -> Self {
         Self {
             receiver,
             file_name: CSV_FILE_PATH.to_string(),
@@ -673,9 +673,9 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
     /// # Panics
     ///
     /// Panics if it can't run the actor.
-    fn new() -> Self {
+    fn new(nticks: usize) -> Self {
         let (sender, receiver) = mpsc::channel(ACTOR_CHANNEL_CAPACITY);
-        let mut actor = WriterActor::new(receiver);
+        let mut actor = WriterActor::new(receiver, nticks);
         tokio::spawn(async move { actor.start().await });
 
         Self { sender }
@@ -724,13 +724,12 @@ pub enum CollectionActorMsg {
     },
 }
 
-// TODO: update docstring
 /// Actor for collecting calculated performance indicators for fetched stock data into a buffer
 ///
 /// It is used for storing the performance data in a buffer of capacity `N`,
 /// where `N` is the number of main loop iterations that occur at a fixed time interval.
 ///
-/// These data can then be fetched by the web server.
+/// This data can then be fetched by the web server.
 ///
 /// It is not made public on purpose.
 ///
@@ -739,20 +738,22 @@ struct CollectionActor {
     receiver: mpsc::Receiver<CollectionActorMsg>,
     buffer: TailResponse,
     batch: Batch,
-    cnt: usize,
+    chunk_cnt: usize,
+    num_chunks: usize,
 }
 
 impl Actor<MsgResponseType> for CollectionActor {
     type Msg = CollectionActorMsg;
 
     /// Create a new [`CollectionActor`]
-    fn new(receiver: mpsc::Receiver<CollectionActorMsg>) -> Self {
+    fn new(receiver: mpsc::Receiver<CollectionActorMsg>, nticks: usize) -> Self {
         Self {
             receiver,
             // buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE), // todo
             buffer: Vec::with_capacity(TAIL_BUFFER_SIZE),
-            batch: Vec::with_capacity(505), // todo
-            cnt: 0,
+            batch: Vec::with_capacity(nticks),
+            chunk_cnt: 0,
+            num_chunks: calc_num_chunks(nticks, CHUNK_SIZE),
         }
     }
 
@@ -801,7 +802,6 @@ impl Actor<MsgResponseType> for CollectionActor {
         match msg {
             CollectionActorMsg::PerformanceIndicatorsChunk(msg) => {
                 Self::handle_perf_ind_chunk(self, msg).await;
-                // .expect("Expected some result from `handle_perf_ind_chunk()`"); // todo
             }
             CollectionActorMsg::TailRequest { sender, n } => {
                 Self::handle_tail_request(self, sender, n).await?;
@@ -828,24 +828,20 @@ impl CollectionActor {
     async fn handle_perf_ind_chunk(
         &mut self,
         msg: PerformanceIndicatorsRowsMsg,
-        // ) -> Result<MsgResponseType> {
     ) -> MsgResponseType {
         let rows = msg.rows;
 
-        // TODO: When all chunks have been received, assemble a new batch from them and store it in the buffer.
-        self.cnt += 1;
+        // when all chunks have been received, assemble a new batch from them and store the batch in the buffer
+        self.chunk_cnt += 1;
         self.batch.extend(rows);
 
-        // todo: this is not fixed to 2 or to 101!
-        // todo: also, cloning is not efficient; we could use a flag to mark it when the batch is ready for reading (when it's fully-assembled)
-        if self.cnt == 2 {
+        // TODO: cloning is not efficient; we could use a flag to mark it when the batch is ready for reading (when it's fully-assembled)
+        if self.chunk_cnt == self.num_chunks {
             // self.buffer.push_back(self.batch.clone());
             self.buffer.push(self.batch.clone());
-            self.cnt = 0;
+            self.batch.clear();
+            self.chunk_cnt = 0;
         }
-        // self.buffer.extend(rows); remove
-
-        // Ok(())
     }
 
     /// Handle a [`CollectionActorMsg::TailRequest`]
@@ -919,9 +915,9 @@ impl ActorHandle<MsgResponseType, CollectionMsgErrorType> for CollectionActorHan
     /// # Panics
     ///
     /// Panics if it can't run the actor.
-    fn new() -> Self {
+    fn new(nticks: usize) -> Self {
         let (sender, receiver) = mpsc::channel(ACTOR_CHANNEL_CAPACITY);
-        let mut actor = CollectionActor::new(receiver);
+        let mut actor = CollectionActor::new(receiver, nticks);
         tokio::spawn(async move { actor.start().await });
 
         Self { sender }
@@ -933,5 +929,44 @@ impl ActorHandle<MsgResponseType, CollectionMsgErrorType> for CollectionActorHan
         msg: CollectionActorMsg,
     ) -> Result<MsgResponseType, CollectionMsgErrorType> {
         self.sender.send(msg).await
+    }
+}
+
+/// Helper function for calculating number of chunks in the current run of the program
+///
+/// # Params
+/// - `nticks`: number of provided symbols (ticks)
+/// - `chunk_size`: chunk size, optimized for performance
+fn calc_num_chunks(nticks: usize, chunk_size: usize) -> usize {
+    (nticks / chunk_size) + (nticks % chunk_size).clamp(0, 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calc_num_chunks;
+
+    #[test]
+    fn ticks_lt_chunk() {
+        assert_eq!(1, calc_num_chunks(4, 5));
+    }
+
+    #[test]
+    fn ticks_eq_chunk() {
+        assert_eq!(1, calc_num_chunks(5, 5));
+    }
+
+    #[test]
+    fn ticks_gt_chunk_1() {
+        assert_eq!(2, calc_num_chunks(7, 5));
+    }
+
+    #[test]
+    fn ticks_gt_chunk_2() {
+        assert_eq!(2, calc_num_chunks(10, 5));
+    }
+
+    #[test]
+    fn ticks_gt_chunk_3() {
+        assert_eq!(3, calc_num_chunks(13, 5));
     }
 }

@@ -282,7 +282,7 @@ We also included comparison of different implementations.
           point for a general Actor Model library.
     - Performance is excellent! It is at least as fast as our previous fastest solution, if not faster.
 
-### Synchronous Multithreaded Implementation with Actors: TODO
+### Synchronous Multithreaded Implementation with Actors: TODO/SKIP
 
 - Our task is I/O bound, so we can skip this.
 

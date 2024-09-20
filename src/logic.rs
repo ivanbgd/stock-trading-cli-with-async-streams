@@ -77,10 +77,13 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         | ImplementationVariant::NoActorsRayon => symbols.par_chunks(CHUNK_SIZE).collect(), // rayon parallel chunks
     };
 
+    // used only in CollectionActor
+    let nticks = symbols.len();
+
     // Use with my Actor implementation
     // Tested and it works with the integrated web application.
-    let writer_handle = WriterActorHandle::new();
-    let collection_handle = CollectionActorHandle::new();
+    let writer_handle = WriterActorHandle::new(nticks);
+    let collection_handle = CollectionActorHandle::new(nticks);
 
     // // Use with Actix Actor implementation
     // // We need to ensure that we have one and only one `WriterActor` - a Singleton.
@@ -161,7 +164,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         //
         // Tested and it works with the integrated web application.
         for chunk in chunks_of_symbols.clone() {
-            let actor_handle = UniversalActorHandle::new();
+            let actor_handle = UniversalActorHandle::new(nticks);
             let _ = actor_handle
                 .send(ActorMessage::QuoteRequestsMsg {
                     symbols: chunk.into(),
@@ -181,7 +184,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         // let queries: Vec<_> = chunks_of_symbols
         //     .par_iter()
         //     .map(|chunk| async {
-        //         let actor_handle: UniversalActorHandle = ActorHandle::new();
+        //         let actor_handle: UniversalActorHandle = ActorHandle::new(nticks);
         //         actor_handle
         //             .send(ActorMessage::QuoteRequestsMsg {
         //                 symbols: (*chunk).into(),
