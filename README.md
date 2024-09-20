@@ -483,6 +483,6 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-01-01T1
 - Our blocking [std::fs::File](https://doc.rust-lang.org/std/fs/struct.File.html) implementation works well,
   but consider trying out [tokio::fs::File](https://docs.rs/tokio/latest/tokio/fs/struct.File.html)
   and/or [async_std::fs::File](https://docs.rs/async-std/latest/async_std/fs/struct.File.html) as well.
-- Integrate web application with Actix actors, and with the no-actors variant.
+- Integrate our web application with Actix actors, and with the no-actors variant.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.

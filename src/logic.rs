@@ -78,6 +78,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
     };
 
     // Use with my Actor implementation
+    // Tested and it works with the integrated web application.
     let writer_handle = WriterActorHandle::new();
     let collection_handle = CollectionActorHandle::new();
 
@@ -160,40 +161,43 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         // Prints execution time after each chunk, which doesn't look super-nice, and that also
         // slows down execution a little, but at least we can measure the execution time,
         // which is important to us.
-        for chunk in chunks_of_symbols.clone() {
-            let actor_handle = UniversalActorHandle::new();
-            let _ = actor_handle
-                .send(ActorMessage::QuoteRequestsMsg {
-                    symbols: chunk.into(),
-                    from,
-                    to,
-                    writer_handle: writer_handle.clone(),
-                    collection_handle: collection_handle.clone(),
-                    start,
-                })
-                .await;
-        }
+        //
+        // Tested and it works with the integrated web application.
+        // for chunk in chunks_of_symbols.clone() {
+        //     let actor_handle = UniversalActorHandle::new();
+        //     let _ = actor_handle
+        //         .send(ActorMessage::QuoteRequestsMsg {
+        //             symbols: chunk.into(),
+        //             from,
+        //             to,
+        //             writer_handle: writer_handle.clone(),
+        //             collection_handle: collection_handle.clone(),
+        //             start,
+        //         })
+        //         .await;
+        // }
 
-        // // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
-        // // It's around 0.7 s on new computer with chunk size = 5; it wasn't measured on the old one.
-        // // It's around 1.3 s with CS = 1, and around 1.3 s with CS = 10.
-        // let queries: Vec<_> = chunks_of_symbols
-        //     .par_iter()
-        //     .map(|chunk| async {
-        //         let actor_handle: UniversalActorHandle = ActorHandle::new();
-        //         actor_handle
-        //             .send(ActorMessage::QuoteRequestsMsg {
-        //                 symbols: (*chunk).into(),
-        //                 from,
-        //                 to,
-        //                 writer_handle: writer_handle.clone(),
-        //                 collection_handle: collection_handle.clone(),
-        //                 start,
-        //             })
-        //             .await
-        //     })
-        //     .collect();
-        // let _ = futures::future::join_all(queries).await;
+        // With rayon. Same speed as without rayon; fast (chunks or par_chunks doesn't make a difference).
+        // It's around 0.7 s on new computer with chunk size = 5; it wasn't measured on the old one.
+        // It's around 1.3 s with CS = 1, and around 1.3 s with CS = 10.
+        // Tested and it works with the integrated web application.
+        let queries: Vec<_> = chunks_of_symbols
+            .par_iter()
+            .map(|chunk| async {
+                let actor_handle: UniversalActorHandle = ActorHandle::new();
+                actor_handle
+                    .send(ActorMessage::QuoteRequestsMsg {
+                        symbols: (*chunk).into(),
+                        from,
+                        to,
+                        writer_handle: writer_handle.clone(),
+                        collection_handle: collection_handle.clone(),
+                        start,
+                    })
+                    .await
+            })
+            .collect();
+        let _ = futures::future::join_all(queries).await;
 
         //
         // WITH ACTIX ACTORS
