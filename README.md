@@ -298,7 +298,9 @@ We also included comparison of different implementations.
       Each batch contains processed data (performance indicators) for all S&P 500 symbols.
       The batches are created at regular time intervals.
       Returns batches in the JSON format.
-    - http://127.0.0.1:3000/tailstr/n - similar to `tail`, but returns batches in the String format.
+    - http://127.0.0.1:3000/tailstr/n - similar to `tail`, and also returns batches in the JSON format,
+      but formatted differently, to look like the CLI output (`stdout` or tracing output), which is also the same
+      as the CSV file format that we write.
 
 ## Additional Explanation
 

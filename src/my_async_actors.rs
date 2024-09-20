@@ -496,7 +496,7 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
 // ============================================================================
 
 /// A single row of calculated performance indicators for a symbol
-#[derive(Clone, Debug /*, Serialize*/)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
@@ -825,6 +825,9 @@ impl CollectionActor {
     ///
     /// This ensures that a batch cannot be partially read by the web server.
     /// It can only be fully-read, when it's ready.
+    /// Synchronization in the Actor model is accomplished via message passing.
+    ///
+    /// The *from* field is discarded.
     ///
     /// This message comes from a processing actor.
     async fn handle_perf_ind_chunk(

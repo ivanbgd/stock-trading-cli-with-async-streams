@@ -4,6 +4,7 @@ use axum::{debug_handler, Json};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::Html;
+use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::constants::{ACTOR_CHANNEL_CAPACITY, TAIL_BUFFER_SIZE};
@@ -24,10 +25,13 @@ pub struct WebAppState {
 ///
 /// The batches are created at regular time intervals.
 ///
-/// Not strictly needed, because this is just a wrapper type,
-/// but we kept it for completeness.
-// #[derive(Serialize)]
-pub struct Tail(TailResponse);
+// ///Not strictly needed, because this is just a wrapper type, but we kept it for completeness.
+#[derive(Serialize)]
+// pub struct Tail(TailResponse);
+pub struct Tail {
+    from: String,
+    tail: TailResponse,
+}
 
 /// Describes the app
 ///
@@ -54,17 +58,15 @@ pub async fn get_desc() -> (StatusCode, Html<&'static str>) {
 /// If `n` is greater than the buffer size, we return the entire contents of the buffer,
 /// whether it is full or not.
 ///
+/// Works with [`crate::my_async_actors::PerformanceIndicatorsRow`]s.
+///
 /// content-type: application/json
 ///
 /// GET /tail/n
 pub async fn get_tail(
     State(state): State<WebAppState>,
     Path(n): Path<usize>,
-    // ) -> (StatusCode, Json<Tail>) {
-) -> (StatusCode, Json<Vec<Vec<String>>>) {
-    // TODO: work with batches of rows not with strings
-    // let mut tail = last_n_batches(n, state.collection_handle, sender).await;
-
+) -> (StatusCode, Json<Tail>) {
     // limit n to buffer capacity
     let n = n.clamp(0, TAIL_BUFFER_SIZE);
 
@@ -84,20 +86,40 @@ pub async fn get_tail(
 
     // then we wait (block) for response from the collection actor, which we receive
     // at the receiving half of the channel
-    let tail = receiver.recv().await.unwrap();
-
-    // let mut response = TailResponse::new();
-    let mut batches = Vec::new();
-    for batch in tail {
-        let mut new_batch = Vec::new();
-        for row in batch {
-            let new_row = format!("{},{}", state.from, row);
-            new_batch.push(new_row);
-        }
-        batches.push(new_batch);
+    if let Some(tail) = receiver.recv().await {
+        // we add the *from* field only at the beginning of the batch, and to at the
+        // beginning of each row, but this should be enough
+        // (StatusCode::OK, Json(Tail(tail)))
+        (
+            StatusCode::OK,
+            Json(Tail {
+                from: state.from,
+                tail,
+            }),
+        )
+    } else {
+        // (StatusCode::INTERNAL_SERVER_ERROR, Json(Tail(vec![])))
+        (
+            StatusCode::OK,
+            Json(Tail {
+                from: state.from,
+                tail: vec![],
+            }),
+        )
     }
 
-    (StatusCode::OK, Json(batches))
+    // // let mut response = TailResponse::new();
+    // let mut batches = Vec::new();
+    // for batch in tail {
+    //     let mut new_batch = Vec::new();
+    //     for row in batch {
+    //         let new_row = format!("{},{}", state.from, row);
+    //         new_batch.push(new_row);
+    //     }
+    //     batches.push(new_batch);
+    // }
+    //
+    // (StatusCode::OK, Json(batches))
 
     // let t = tail
     //     .iter()
@@ -128,8 +150,6 @@ pub async fn get_tail_str(
     State(state): State<WebAppState>,
     Path(n): Path<usize>,
 ) -> (StatusCode, Json<TailResponseString>) {
-    // TODO: see if it can be solved with iterators instead of for loops
-
     // limit n to buffer capacity
     let n = n.clamp(0, TAIL_BUFFER_SIZE);
 
@@ -149,39 +169,27 @@ pub async fn get_tail_str(
 
     // then we wait (block) for response from the collection actor, which we receive
     // at the receiving half of the channel
-    let tail = receiver.recv().await.unwrap();
-
-    let mut batches = Vec::new();
-    for batch in tail {
-        let mut new_batch = Vec::new();
-        for row in batch {
-            let new_row = format!("{},{}", state.from, row);
-            new_batch.push(new_row);
+    if let Some(tail) = receiver.recv().await {
+        // we now add the *from* field at the beginning of each row that goes to output
+        //
+        // since we use the same message type as in [`get_tail`], the same message handler is used inside
+        // the collection actor, and it returns [`TailResponse`], which is the above `tail` variable
+        //
+        // we (currently) don't have an iterator over [`TailResponse`], so we need to use the nested loops
+        let mut batches = Vec::new();
+        for batch in tail {
+            let mut new_batch = Vec::new();
+            for row in batch {
+                let new_row = format!("{},{}", state.from, row);
+                new_batch.push(new_row);
+            }
+            batches.push(new_batch);
         }
-        batches.push(new_batch);
+        (StatusCode::OK, Json(batches))
+    } else {
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(vec![]))
     }
-
-    (StatusCode::OK, Json(batches))
 }
-
-// TODO: start using again as it is now used in two handlers, if it makes sense
-// /// Fetches the last `n` batches of performance indicators for all symbols.
-// ///
-// /// If `n` is greater than the buffer size, we return the entire contents of the buffer,
-// /// whether it is full or not.
-// async fn last_n_batches(n: usize, collection_handle: CollectionActorHandle, sender: oneshot::Sender<[i32; 10]>) -> Result<Tail> {
-//     let n = n.clamp(0, TAIL_BUFFER_SIZE);
-//     // let (sender, receiver) = tokio::sync::oneshot::channel();
-//     // collection_handle
-//     //     .send(CollectionActorMsg::TailRequest { sender, n })
-//     //     .await
-//     //     .context("TODO: panic message")?;
-//     // let tail = receiver.await.expect("Failed to get TailResponse"); // todo
-//
-//     // let all: Vec<u8> = vec![1, 2, 3, 4, 5];
-//     // let tail = all.iter().take(n).copied().map(|x| x.to_string()).collect();
-//     Ok(Tail { tail })
-// }
 
 /// Describes the app
 async fn description() -> Html<&'static str> {
