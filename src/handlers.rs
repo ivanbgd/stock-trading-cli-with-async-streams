@@ -24,10 +24,7 @@ pub struct WebAppState {
 /// where each batch contains processed data for all S&P 500 symbols.
 ///
 /// The batches are created at regular time intervals.
-///
-// ///Not strictly needed, because this is just a wrapper type, but we kept it for completeness.
 #[derive(Serialize)]
-// pub struct Tail(TailResponse);
 pub struct Tail {
     from: String,
     tail: TailResponse,
@@ -89,7 +86,6 @@ pub async fn get_tail(
     if let Some(tail) = receiver.recv().await {
         // we add the *from* field only at the beginning of the batch, and to at the
         // beginning of each row, but this should be enough
-        // (StatusCode::OK, Json(Tail(tail)))
         (
             StatusCode::OK,
             Json(Tail {
@@ -98,7 +94,6 @@ pub async fn get_tail(
             }),
         )
     } else {
-        // (StatusCode::INTERNAL_SERVER_ERROR, Json(Tail(vec![])))
         (
             StatusCode::OK,
             Json(Tail {
@@ -107,29 +102,6 @@ pub async fn get_tail(
             }),
         )
     }
-
-    // // let mut response = TailResponse::new();
-    // let mut batches = Vec::new();
-    // for batch in tail {
-    //     let mut new_batch = Vec::new();
-    //     for row in batch {
-    //         let new_row = format!("{},{}", state.from, row);
-    //         new_batch.push(new_row);
-    //     }
-    //     batches.push(new_batch);
-    // }
-    //
-    // (StatusCode::OK, Json(batches))
-
-    // let t = tail
-    //     .iter()
-    //     // .flatten()
-    //     .map(|row| format!("{},{:?}", state.from, row))
-    //     .collect();
-    // let tail = Tail(t);
-
-    // (StatusCode::OK, Json(tail))
-    // (StatusCode::OK, Json(Tail(tail)))
 }
 
 /// Fetches the last `n` iterations of the main loop, which occur at a fixed time interval,
