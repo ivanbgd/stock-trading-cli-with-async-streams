@@ -8,9 +8,8 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::constants::{ACTOR_CHANNEL_CAPACITY, TAIL_BUFFER_SIZE};
-use crate::my_async_actors::{
-    ActorHandle, CollectionActorHandle, CollectionActorMsg, TailResponse,
-};
+use crate::my_async_actors::{ActorHandle, CollectionActorHandle, CollectionActorMsg};
+use crate::types::TailResponse;
 
 /// Our web app's state for keeping some variables
 #[derive(Clone)]

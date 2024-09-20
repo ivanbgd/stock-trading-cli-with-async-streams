@@ -21,7 +21,8 @@ use crate::constants::{
     ACTOR_CHANNEL_CAPACITY, CSV_FILE_PATH, CSV_HEADER, TAIL_BUFFER_SIZE, WINDOW_SIZE,
 };
 use crate::types::{
-    CollectionMsgErrorType, MsgResponseType, UniversalMsgErrorType, WriterMsgErrorType,
+    Batch, CollectionMsgErrorType, MsgResponseType, TailResponse, UniversalMsgErrorType,
+    WriterMsgErrorType,
 };
 
 // ============================================================================
@@ -712,26 +713,6 @@ pub enum CollectionActorMsg {
     },
 }
 
-// TODO: move to types.rs
-/// A single iteration of the main loop, which contains processed data
-/// for all S&P 500 symbols
-// #[derive(Debug)]
-type Batch = Vec<PerformanceIndicatorsRow>;
-// struct Batch {
-//     rows: Vec<PerformanceIndicatorsRow>,
-// }
-
-// TODO: update docstring; move to types.rs
-/// A response for the web server which contains the requested last `n`
-/// batches of processed symbol data
-// pub type TailResponse = Vec<Batch>;
-pub type TailResponse = Vec<PerformanceIndicatorsRow>;
-// pub type TailResponse = PerformanceIndicatorsRow;
-// #[derive(Debug, Deserialize, Serialize)]
-// pub struct TailResponse {
-//     batches: Vec<Batch>,
-// }
-
 // TODO: update docstring
 /// Actor for collecting calculated performance indicators for fetched stock data into a buffer
 ///
@@ -745,8 +726,9 @@ pub type TailResponse = Vec<PerformanceIndicatorsRow>;
 /// It can only be created through [`CollectionActorHandle`], which is public.
 struct CollectionActor {
     receiver: mpsc::Receiver<CollectionActorMsg>,
-    // buffer: VecDeque<Batch>,
     buffer: TailResponse,
+    batch: Batch,
+    cnt: usize,
 }
 
 impl Actor<MsgResponseType> for CollectionActor {
@@ -756,8 +738,10 @@ impl Actor<MsgResponseType> for CollectionActor {
     fn new(receiver: mpsc::Receiver<CollectionActorMsg>) -> Self {
         Self {
             receiver,
-            // buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE),
+            // buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE), // todo
             buffer: Vec::with_capacity(TAIL_BUFFER_SIZE),
+            batch: Vec::with_capacity(505), // todo
+            cnt: 0,
         }
     }
 
@@ -767,9 +751,6 @@ impl Actor<MsgResponseType> for CollectionActor {
     async fn start(&mut self) -> Result<MsgResponseType> {
         #[cfg(debug_assertions)]
         tracing::debug!("CollectionActor is starting...");
-
-        // TODO: set up buffer
-        // TODO: maybe set up link to web server
 
         tracing::debug!("CollectionActor is started.");
 
@@ -809,7 +790,7 @@ impl Actor<MsgResponseType> for CollectionActor {
         match msg {
             CollectionActorMsg::PerformanceIndicatorsChunk(msg) => {
                 Self::handle_perf_ind_chunk(self, msg).await;
-                // .expect("Expected some result from `handle_perf_ind_chunk()`");
+                // .expect("Expected some result from `handle_perf_ind_chunk()`"); // todo
             }
             CollectionActorMsg::TailRequest { sender, n } => {
                 Self::handle_tail_request(self, sender, n).await?;
@@ -834,8 +815,18 @@ impl CollectionActor {
     ) -> MsgResponseType {
         let rows = msg.rows;
 
-        // self.buffer.push_back(vec![]);
-        self.buffer.extend(rows);
+        // TODO: When all chunks have been received, assemble a new batch from them and store it in the buffer.
+        self.cnt += 1;
+        self.batch.extend(rows);
+
+        // todo: this is not fixed to 2 or to 101!
+        // todo: also, cloning is not efficient; we could use a flag to mark it when the batch is ready for reading (when it's fully-assembled)
+        if self.cnt == 2 {
+            // self.buffer.push_back(self.batch.clone());
+            self.buffer.push(self.batch.clone());
+            self.cnt = 0;
+        }
+        // self.buffer.extend(rows); remove
 
         // Ok(())
     }
@@ -848,6 +839,7 @@ impl CollectionActor {
         sender: mpsc::Sender<TailResponse>,
         n: usize,
     ) -> Result<MsgResponseType> {
+        // todo: do this modulo capacity
         let response = self.buffer.iter().take(n).cloned().collect();
         sender.send(response).await.unwrap();
 

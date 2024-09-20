@@ -35,8 +35,7 @@ use crate::constants::{
 };
 use crate::handlers::{get_desc, get_tail, root, WebAppState};
 use crate::my_async_actors::{
-    ActorHandle, ActorMessage, CollectionActorHandle, TailResponse, UniversalActorHandle,
-    WriterActorHandle,
+    ActorHandle, ActorMessage, CollectionActorHandle, UniversalActorHandle, WriterActorHandle,
 };
 use crate::types::MsgResponseType;
 
