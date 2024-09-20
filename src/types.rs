@@ -13,6 +13,10 @@ pub type CollectionMsgErrorType = SendError<CollectionActorMsg>;
 /// for all S&P 500 symbols
 pub type Batch = Vec<PerformanceIndicatorsRow>;
 
-/// A response for the web server which contains the requested last `n`
-/// batches of processed symbol data
+/// A response for the web server which contains the requested last `n` batches
+/// of processed symbol data in form of [`PerformanceIndicatorsRow`] data
 pub type TailResponse = Vec<Batch>;
+
+/// A response for the web server which contains the requested last `n` batches
+/// of processed symbol data in form of [`String`] data
+pub type TailResponseString = Vec<Vec<String>>;

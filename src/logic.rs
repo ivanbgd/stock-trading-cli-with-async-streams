@@ -33,7 +33,7 @@ use crate::cli::{Args, ImplementationVariant};
 use crate::constants::{
     ACTOR_CHANNEL_CAPACITY, CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS, WEB_SERVER_ADDRESS,
 };
-use crate::handlers::{get_desc, get_tail, root, WebAppState};
+use crate::handlers::{get_desc, get_tail, get_tail_str, root, WebAppState};
 use crate::my_async_actors::{
     ActorHandle, ActorMessage, CollectionActorHandle, UniversalActorHandle, WriterActorHandle,
 };
@@ -109,6 +109,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         .route("/", get(root))
         .route("/desc", get(get_desc))
         .route("/tail/:n", get(get_tail))
+        .route("/tailstr/:n", get(get_tail_str))
         .with_state(state);
 
     // run our web app with hyper

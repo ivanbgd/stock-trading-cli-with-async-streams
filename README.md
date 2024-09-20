@@ -297,6 +297,8 @@ We also included comparison of different implementations.
     - http://127.0.0.1:3000/tail/n - where `n` is the number of the most recent batches that a user wants to examine.
       Each batch contains processed data (performance indicators) for all S&P 500 symbols.
       The batches are created at regular time intervals.
+      Returns batches in the JSON format.
+    - http://127.0.0.1:3000/tailstr/n - similar to `tail`, but returns batches in the String format.
 
 ## Additional Explanation
 
@@ -479,5 +481,6 @@ $ export SYMBOLS="$(cat sp500_2024_aug.csv)" && cargo run -- --from 2024-01-01T1
 - Our blocking [std::fs::File](https://doc.rust-lang.org/std/fs/struct.File.html) implementation works well,
   but consider trying out [tokio::fs::File](https://docs.rs/tokio/latest/tokio/fs/struct.File.html)
   and/or [async_std::fs::File](https://docs.rs/async-std/latest/async_std/fs/struct.File.html) as well.
+- Integrate web application with Actix actors, and with the no-actors variant.
 - Read symbols from a file instead of from the command line.
 - Sort output by symbol.

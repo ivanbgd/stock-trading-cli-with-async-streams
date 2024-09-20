@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 use std::collections::{HashMap, VecDeque};
+use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
@@ -495,7 +496,7 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
 // ============================================================================
 
 /// A single row of calculated performance indicators for a symbol
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug /*, Serialize*/)]
 pub struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
@@ -503,6 +504,21 @@ pub struct PerformanceIndicatorsRow {
     pub period_min: f64,
     pub period_max: f64,
     pub sma: f64,
+}
+
+impl Display for PerformanceIndicatorsRow {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{},${:.2},{:.2}%,${:.2},${:.2},${:.2}",
+            self.symbol,
+            self.last_price,
+            self.pct_change,
+            self.period_min,
+            self.period_max,
+            self.sma
+        )
+    }
 }
 
 /// The [`PerformanceIndicatorsRowsMsg`] message
