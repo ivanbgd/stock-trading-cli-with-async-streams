@@ -807,6 +807,9 @@ impl CollectionActor {
     ///
     /// Assembles chunks into complete batches and stores them in buffer.
     ///
+    /// This ensures that a batch cannot be partially read by the web server.
+    /// It can only be fully-read, when it's ready.
+    ///
     /// This message comes from a processing actor.
     async fn handle_perf_ind_chunk(
         &mut self,
@@ -833,7 +836,14 @@ impl CollectionActor {
 
     /// Handle a [`CollectionActorMsg::TailRequest`]
     ///
-    /// This message comes from web server.
+    /// Gets the last fully-assembled `n` batches of performance indicators,
+    /// and sends them to the web server.
+    ///
+    /// Takes care of keeping only the fresh data in the buffer, so that its
+    /// size doesn't ever grow, which prevents memory leaks.
+    /// Old data are removed from the buffer to make room for new data.
+    ///
+    /// This message comes from the web server.
     async fn handle_tail_request(
         &mut self,
         sender: mpsc::Sender<TailResponse>,
