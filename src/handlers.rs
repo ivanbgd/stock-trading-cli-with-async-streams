@@ -5,9 +5,12 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::Html;
 use serde::Serialize;
+use tokio::sync::mpsc;
 
-use crate::constants::TAIL_BUFFER_SIZE;
-use crate::my_async_actors::CollectionActorHandle;
+use crate::constants::{ACTOR_CHANNEL_CAPACITY, TAIL_BUFFER_SIZE};
+use crate::my_async_actors::{
+    ActorHandle, CollectionActorHandle, CollectionActorMsg, TailResponse,
+};
 
 /// Our web app's state for keeping some variables
 #[derive(Clone)]
@@ -18,13 +21,12 @@ pub struct WebAppState {
     pub collection_handle: CollectionActorHandle,
 }
 
-/// List of last `n` batches, where each batch contains processed data for all S&P 500 symbols.
+/// An array of the last `n` fully-assembled batches,
+/// where each batch contains processed data for all S&P 500 symbols.
+///
 /// The batches are created at regular time intervals.
 #[derive(Serialize)]
-pub struct Tail {
-    // TODO: Vec<Batch>
-    tail: Vec<String>,
-}
+pub struct Tail(TailResponse);
 
 /// Describes the app
 ///
@@ -58,14 +60,26 @@ pub async fn get_tail(
     State(state): State<WebAppState>,
     Path(n): Path<usize>,
 ) -> (StatusCode, Json<Tail>) {
-    let mut tail = last_n_batches(n).await;
-    let t = tail
-        .tail
-        .iter()
-        .map(|row| format!("{},{}", state.from, row));
-    tail.tail = t.collect();
+    // let mut tail = last_n_batches(n, state.collection_handle, sender).await;
 
-    (StatusCode::OK, Json(tail))
+    let n = n.clamp(0, TAIL_BUFFER_SIZE);
+    // todo: do I need a blocking channel, like from std::sync?
+    let (sender, mut receiver) = mpsc::channel(ACTOR_CHANNEL_CAPACITY);
+    let _ = state
+        .collection_handle
+        .send(CollectionActorMsg::TailRequest { sender, n })
+        .await;
+    // .context("Failed to send")
+    // .unwrap();
+    let tail = receiver.recv().await.unwrap(); // .context("Failed to get TailResponse");
+                                               // let t = tail
+                                               //     .tail
+                                               //     .iter()
+                                               //     .map(|row| format!("{},{}", state.from, row));
+                                               // tail.tail = t.collect();
+
+    // (StatusCode::OK, Json(tail))
+    (StatusCode::OK, Json(Tail(tail)))
 }
 
 /// Describes the app
@@ -73,14 +87,20 @@ async fn description() -> Html<&'static str> {
     Html("<p>Stock Trading CLI with Async Streams</p>")
 }
 
-/// Fetches the last `n` batches of performance indicators for all symbols.
-///
-/// If `n` is greater than the buffer size, we return the entire contents of the buffer,
-/// whether it is full or not.
-async fn last_n_batches(n: usize) -> Tail {
-    let n = n.clamp(0, TAIL_BUFFER_SIZE);
-    // TODO
-    let all: Vec<u8> = vec![1, 2, 3, 4, 5];
-    let tail = all.iter().take(n).copied().map(|x| x.to_string()).collect();
-    Tail { tail }
-}
+// /// Fetches the last `n` batches of performance indicators for all symbols.
+// ///
+// /// If `n` is greater than the buffer size, we return the entire contents of the buffer,
+// /// whether it is full or not.
+// async fn last_n_batches(n: usize, collection_handle: CollectionActorHandle, sender: oneshot::Sender<[i32; 10]>) -> Result<Tail> {
+//     let n = n.clamp(0, TAIL_BUFFER_SIZE);
+//     // let (sender, receiver) = tokio::sync::oneshot::channel();
+//     // collection_handle
+//     //     .send(CollectionActorMsg::TailRequest { sender, n })
+//     //     .await
+//     //     .context("TODO: panic message")?;
+//     // let tail = receiver.await.expect("Failed to get TailResponse"); // todo
+//
+//     // let all: Vec<u8> = vec![1, 2, 3, 4, 5];
+//     // let tail = all.iter().take(n).copied().map(|x| x.to_string()).collect();
+//     Ok(Tail { tail })
+// }

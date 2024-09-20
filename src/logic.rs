@@ -30,12 +30,14 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 // use crate::actix_async_actors::{handle_symbol_data, WriterActor};
 use crate::cli::{Args, ImplementationVariant};
-use crate::constants::{CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS, WEB_SERVER_ADDRESS};
+use crate::constants::{
+    ACTOR_CHANNEL_CAPACITY, CHUNK_SIZE, CSV_HEADER, TICK_INTERVAL_SECS, WEB_SERVER_ADDRESS,
+};
 use crate::handlers::{get_desc, get_tail, root, WebAppState};
 use crate::my_async_actors::{
-    ActorHandle, ActorMessage, CollectionActorHandle, UniversalActorHandle, WriterActorHandle,
+    ActorHandle, ActorMessage, CollectionActorHandle, TailResponse, UniversalActorHandle,
+    WriterActorHandle,
 };
-// use crate::my_async_actors::{ActorHandle, ActorMessage, UniversalActorHandle, WriterActorHandle};
 use crate::types::MsgResponseType;
 
 /// **The main loop**
@@ -94,6 +96,9 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
     // // Use with async without Actors
     // let mut writer = start_writer()?;
 
+    // let (tx, rx) = tokio::sync::mpsc::channel::<TailResponse>(ACTOR_CHANNEL_CAPACITY);
+    // let (tx, rx) = tokio::sync::oneshot::channel::<TailResponse>();
+
     tracing::debug!("starting the web application");
 
     // build our web application with a state and with a route
@@ -108,6 +113,7 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
         .with_state(state);
 
     // run our web app with hyper
+    // we need to spawn it as a separate tokio task so that we don't get blocked here
     let listener = tokio::net::TcpListener::bind(WEB_SERVER_ADDRESS).await?;
     tracing::info!("listening on {}", listener.local_addr()?);
     tokio::spawn(async move { axum::serve(listener, app).await });
@@ -115,10 +121,8 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
 
     tracing::debug!("starting the main loop");
 
-    // let mut interval = async_std::stream::interval(Duration::from_secs(TICK_INTERVAL_SECS));
     let mut interval = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
 
-    // while let Some(_) = interval.next().await {
     loop {
         interval.tick().await;
 
@@ -279,11 +283,4 @@ pub async fn main_loop(args: Args) -> Result<MsgResponseType> {
 
         println!();
     }
-
-    // println!("OUT!!!");
-    // stop_writer(writer); // Unreachable, but also unneeded if using Tokio's interval.
-
-    // System::current().stop();
-
-    // Ok(())
 }

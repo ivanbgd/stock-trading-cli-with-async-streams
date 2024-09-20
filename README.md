@@ -284,12 +284,13 @@ We also included comparison of different implementations.
 
 ### Synchronous Multithreaded Implementation with Actors: TODO
 
-- Our task is I/O bound, so we could skip this.
+- Our task is I/O bound, so we can skip this.
 
-### The Web Service
+### The Web Application
 
 - The actors are connected to the outside world.
-- We create a web service for this.
+- We create a web application for this.
+- Only my own implementation of actors is used for this part.
 - Available routes are (address and port are defined in [src/constants.rs](src/constants.rs)):
     - http://127.0.0.1:3000/ - shows program description
     - http://127.0.0.1:3000/desc - shows program description

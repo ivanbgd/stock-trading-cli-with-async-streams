@@ -10,9 +10,10 @@ use std::io::{BufWriter, Write};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use serde::Serialize;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use yahoo_finance_api as yahoo;
 
 use crate::async_signals::{AsyncStockSignal, MaxPrice, MinPrice, PriceDifference, WindowedSMA};
@@ -493,7 +494,7 @@ impl ActorHandle<MsgResponseType, UniversalMsgErrorType> for UniversalActorHandl
 // ============================================================================
 
 /// A single row of calculated performance indicators for a symbol
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PerformanceIndicatorsRow {
     pub symbol: String,
     pub last_price: f64,
@@ -704,26 +705,14 @@ impl ActorHandle<MsgResponseType, WriterMsgErrorType> for WriterActorHandle {
 pub enum CollectionActorMsg {
     /// Wraps a [`PerformanceIndicatorsRowsMsg`] message
     PerformanceIndicatorsChunk(PerformanceIndicatorsRowsMsg),
-    /// A request for the last `n` batches of processed data from web server
+    /// A request from web server for the last `n` batches of processed data
     TailRequest {
-        web_server: oneshot::Receiver<TailResponse>,
+        sender: mpsc::Sender<TailResponse>,
         n: usize,
     },
-    // PerformanceIndicatorsChunk {
-    //     from: String,
-    //     rows: Vec<PerformanceIndicatorsRow>,
-    //     start: Instant,
-    // },
-    // PerformanceIndicatorsRow {
-    //     symbol: String,
-    //     last_price: f64,
-    //     pct_change: f64,
-    //     period_min: f64,
-    //     period_max: f64,
-    //     sma: f64,
-    // },
 }
 
+// TODO: move to types.rs
 /// A single iteration of the main loop, which contains processed data
 /// for all S&P 500 symbols
 // #[derive(Debug)]
@@ -732,11 +721,13 @@ type Batch = Vec<PerformanceIndicatorsRow>;
 //     rows: Vec<PerformanceIndicatorsRow>,
 // }
 
-// TODO: update docstring
+// TODO: update docstring; move to types.rs
 /// A response for the web server which contains the requested last `n`
 /// batches of processed symbol data
-// #[derive(Debug)]
-type TailResponse = Vec<Batch>;
+// pub type TailResponse = Vec<Batch>;
+pub type TailResponse = Vec<PerformanceIndicatorsRow>;
+// pub type TailResponse = PerformanceIndicatorsRow;
+// #[derive(Debug, Deserialize, Serialize)]
 // pub struct TailResponse {
 //     batches: Vec<Batch>,
 // }
@@ -754,7 +745,8 @@ type TailResponse = Vec<Batch>;
 /// It can only be created through [`CollectionActorHandle`], which is public.
 struct CollectionActor {
     receiver: mpsc::Receiver<CollectionActorMsg>,
-    buffer: VecDeque<Batch>,
+    // buffer: VecDeque<Batch>,
+    buffer: TailResponse,
 }
 
 impl Actor<MsgResponseType> for CollectionActor {
@@ -764,7 +756,8 @@ impl Actor<MsgResponseType> for CollectionActor {
     fn new(receiver: mpsc::Receiver<CollectionActorMsg>) -> Self {
         Self {
             receiver,
-            buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE),
+            // buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE),
+            buffer: Vec::with_capacity(TAIL_BUFFER_SIZE),
         }
     }
 
@@ -815,12 +808,11 @@ impl Actor<MsgResponseType> for CollectionActor {
     async fn handle(&mut self, msg: CollectionActorMsg) -> Result<MsgResponseType> {
         match msg {
             CollectionActorMsg::PerformanceIndicatorsChunk(msg) => {
-                Self::handle_perf_ind_chunk(self, msg)
-                    .await
-                    .expect("Expected some result from `handle_perf_ind_chunk()`");
+                Self::handle_perf_ind_chunk(self, msg).await;
+                // .expect("Expected some result from `handle_perf_ind_chunk()`");
             }
-            CollectionActorMsg::TailRequest { web_server, n } => {
-                Self::handle_tail_request(web_server, n).await?;
+            CollectionActorMsg::TailRequest { sender, n } => {
+                Self::handle_tail_request(self, sender, n).await?;
             }
         }
 
@@ -838,22 +830,38 @@ impl CollectionActor {
     async fn handle_perf_ind_chunk(
         &mut self,
         msg: PerformanceIndicatorsRowsMsg,
-    ) -> Result<MsgResponseType> {
+        // ) -> Result<MsgResponseType> {
+    ) -> MsgResponseType {
         let rows = msg.rows;
-        // let start = msg.start;
 
-        self.buffer.push_back(vec![]);
+        // self.buffer.push_back(vec![]);
+        self.buffer.extend(rows);
 
-        Ok(())
+        // Ok(())
     }
 
     /// Handle a [`CollectionActorMsg::TailRequest`]
     ///
     /// This message comes from web server.
     async fn handle_tail_request(
-        web_server: oneshot::Receiver<TailResponse>,
+        &mut self,
+        sender: mpsc::Sender<TailResponse>,
         n: usize,
     ) -> Result<MsgResponseType> {
+        let response = self.buffer.iter().take(n).cloned().collect();
+        sender.send(response).await.unwrap();
+
+        // let response = &self.buffer[..n];
+        // let response = &self.buffer;
+        // sender
+        //     .send(<TailResponse>::try_from(response).unwrap())
+        //     .await
+        //     .unwrap();
+        // .context("Failed to send response")?;
+
+        // sender.send(*response).await.unwrap();
+        // .context("Failed to send response")?;
+
         Ok(())
     }
 }
