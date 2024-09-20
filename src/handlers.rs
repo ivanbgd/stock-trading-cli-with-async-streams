@@ -26,7 +26,7 @@ pub struct WebAppState {
 /// where each batch contains processed data for all S&P 500 symbols.
 ///
 /// The batches are created at regular time intervals.
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 pub struct Tail {
     from: String,
     tail: TailResponse,
@@ -96,13 +96,7 @@ pub async fn get_tail(
             }),
         )
     } else {
-        (
-            StatusCode::OK,
-            Json(Tail {
-                from: state.from,
-                tail: vec![],
-            }),
-        )
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(Tail::default()))
     }
 }
 
@@ -161,7 +155,7 @@ pub async fn get_tail_str(
         }
         (StatusCode::OK, Json(batches))
     } else {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(vec![]))
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(Vec::default()))
     }
 }
 

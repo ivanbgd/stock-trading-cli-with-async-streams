@@ -15,4 +15,5 @@ pub const SHUTDOWN_CHANNEL_CAPACITY: usize = 1;
 
 pub const WEB_SERVER_ADDRESS: &str = "127.0.0.1:3000";
 
-pub const TAIL_BUFFER_SIZE: usize = 10;
+/// The tail buffer's capacity in terms of the number of batches it can hold
+pub const TAIL_BUFFER_SIZE: usize = 2;

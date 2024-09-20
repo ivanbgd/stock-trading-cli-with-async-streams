@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use tokio::sync::mpsc::error::SendError;
 
 use crate::my_async_actors::{
@@ -15,7 +17,7 @@ pub type Batch = Vec<PerformanceIndicatorsRow>;
 
 /// A response for the web server which contains the requested last `n` batches
 /// of processed symbol data in form of [`PerformanceIndicatorsRow`] data
-pub type TailResponse = Vec<Batch>;
+pub type TailResponse = VecDeque<Batch>;
 
 /// A response for the web server which contains the requested last `n` batches
 /// of processed symbol data in form of [`String`] data

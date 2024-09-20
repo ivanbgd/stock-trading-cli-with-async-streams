@@ -749,8 +749,7 @@ impl Actor<MsgResponseType> for CollectionActor {
     fn new(receiver: mpsc::Receiver<CollectionActorMsg>, nticks: usize) -> Self {
         Self {
             receiver,
-            // buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE), // todo
-            buffer: Vec::with_capacity(TAIL_BUFFER_SIZE),
+            buffer: VecDeque::with_capacity(TAIL_BUFFER_SIZE),
             batch: Vec::with_capacity(nticks),
             chunk_cnt: 0,
             num_chunks: calc_num_chunks(nticks, CHUNK_SIZE),
@@ -837,8 +836,8 @@ impl CollectionActor {
 
         // TODO: cloning is not efficient; we could use a flag to mark it when the batch is ready for reading (when it's fully-assembled)
         if self.chunk_cnt == self.num_chunks {
-            // self.buffer.push_back(self.batch.clone());
-            self.buffer.push(self.batch.clone());
+            self.buffer.push_front(self.batch.clone());
+            self.buffer.truncate(TAIL_BUFFER_SIZE);
             self.batch.clear();
             self.chunk_cnt = 0;
         }
@@ -859,7 +858,6 @@ impl CollectionActor {
         sender: mpsc::Sender<TailResponse>,
         n: usize,
     ) -> Result<MsgResponseType> {
-        // todo: do this modulo capacity
         let response = self.buffer.iter().take(n).cloned().collect();
         sender.send(response).await.unwrap();
 
